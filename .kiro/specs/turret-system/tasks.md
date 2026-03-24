@@ -1,0 +1,271 @@
+# Implementation Plan: Turret System
+
+## Overview
+
+Implements a pre-defined turret system alongside the existing resource-combo tower system. Covers shared turret data definitions, dual-coin economy (session + persistent), lobby shop and loadout selection, in-game turret placement/targeting/shooting/upgrades, and property-based tests for all 19 correctness properties.
+
+## Tasks
+
+- [x] 1. Create TurretData shared module
+  - [x] 1.1 Create `src/shared/TurretData.luau` with TurretType type definition and 6 turret definitions (Scout, Marksman, Rapid, Cannon, Frost, Tesla) matching the design data table
+    - Include all fields: id, name, description, damage, range, fireRate, shopPrice, placementCost, upgradeMultipliers
+    - Scout Turret (id 1): damage=5, range=12, fireRate=1.0, shopPrice=0, placementCost=50
+    - _Requirements: 1.1, 1.2, 1.3_
+  - [x] 1.2 Implement `getTurretById(id)` and `getAllTurrets()` functions
+    - _Requirements: 1.4_
+  - [ ]* 1.3 Write property test for Property 1: Turret Type Completeness
+    - **Property 1: Turret Type Completeness**
+    - For any valid turret id in [1, N], getTurretById returns a table with all required fields and positive numeric stats
+    - **Validates: Requirements 1.1, 1.4**
+  - [ ]* 1.4 Write property test for Property 2: Turret Catalog Ordering
+    - **Property 2: Turret Catalog Ordering**
+    - For any pair of turret ids i < j (where i,j >= 2), shopPrice of j > shopPrice of i, and all turrets have distinct placementCost
+    - **Validates: Requirements 1.3**
+
+- [x] 2. Extend EconomyManager with dual-coin economy
+  - [x] 2.1 Add session coin functions to `src/server/EconomyManager.luau`: `initSessionCoins`, `getSessionCoins`, `addSessionCoins`, `spendSessionCoins`
+    - Session coins stored in `playerSessionCoins: { [number]: number }`
+    - `initSessionCoins(userId, startingAmount)` sets balance to startingAmount
+    - `spendSessionCoins` returns false if insufficient balance
+    - _Requirements: 2.1, 2.4, 2.5_
+  - [x] 2.2 Add persistent coin functions: `initPersistentCoins`, `getPersistentCoins`, `addPersistentCoins`, `spendPersistentCoins`
+    - Persistent coins stored in `playerPersistentCoins: { [number]: number }`
+    - `spendPersistentCoins` returns false if insufficient balance
+    - _Requirements: 2.8, 2.9, 2.10_
+  - [x] 2.3 Add kill earnings functions: `initKillEarnings`, `addKillEarnings`, `getKillEarnings`, `bankKillEarnings`
+    - `bankKillEarnings` transfers killEarnings to persistentCoins and resets killEarnings to 0
+    - _Requirements: 2.3, 2.6_
+  - [ ]* 2.4 Write property test for Property 3: Session Coin Initialization
+    - **Property 3: Session Coin Initialization**
+    - For any userId, after initSessionCoins(userId, 100), getSessionCoins returns exactly 100
+    - **Validates: Requirements 2.1**
+  - [ ]* 2.5 Write property test for Property 4: Coin Pool Add/Earn Tracking
+    - **Property 4: Coin Pool Add/Earn Tracking**
+    - For any userId and positive amount, addSessionCoins and addKillEarnings increase their respective pools by exactly that amount
+    - **Validates: Requirements 2.2, 2.3**
+  - [ ]* 2.6 Write property test for Property 5: Coin Pool Spend Deduction
+    - **Property 5: Coin Pool Spend Deduction**
+    - For any userId with balance >= cost, spend returns true and reduces balance by exactly cost
+    - **Validates: Requirements 2.4, 2.9**
+  - [ ]* 2.7 Write property test for Property 6: Coin Pool Overspend Rejection
+    - **Property 6: Coin Pool Overspend Rejection**
+    - For any userId and amount > balance, spend returns false and balance is unchanged
+    - **Validates: Requirements 2.5, 2.10**
+  - [ ]* 2.8 Write property test for Property 7: Kill Earnings Banking Round Trip
+    - **Property 7: Kill Earnings Banking Round Trip**
+    - For any userId with killEarnings K and persistentCoins P, bankKillEarnings results in persistent = P+K and killEarnings = 0
+    - **Validates: Requirements 2.6**
+
+- [x] 3. Checkpoint — Verify shared data and economy
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 4. Implement turret shop and loadout in LobbyManager
+  - [x] 4.1 Add player unlock and loadout state to `src/server/LobbyManager.luau`
+    - `playerUnlocks: { [number]: { [number]: boolean } }` — userId → set of turret ids
+    - `playerLoadouts: { [number]: { number } }` — userId → array of 3 turret type ids
+    - On player join, initialize unlocks with turret id 1 (Scout Turret) by default
+    - _Requirements: 3.5, 4.4_
+  - [x] 4.2 Wire `BuyTurret` remote handler in LobbyManager
+    - Validate turret not already unlocked, validate sufficient persistent coins
+    - Deduct shopPrice via `EconomyManager.spendPersistentCoins`, add turret to unlocks
+    - Fire `BuyTurretResult` and `ShopUpdate` remotes
+    - _Requirements: 3.3, 3.4, 3.6_
+  - [x] 4.3 Wire `SetLoadout` remote handler in LobbyManager
+    - Validate exactly 3 turret ids, all present in player's unlocked set
+    - If only 1 turret unlocked, auto-fill all 3 slots with that turret
+    - Store loadout, fire `SetLoadoutResult`
+    - _Requirements: 4.1, 4.2, 4.5_
+  - [x] 4.4 Enforce loadout validation before game launch in `launchGame`
+    - Reject launch if any player has fewer than 3 loadout slots filled
+    - Pass loadouts to GameManager
+    - _Requirements: 4.2_
+  - [x] 4.5 Create new remotes: `BuyTurret`, `BuyTurretResult`, `SetLoadout`, `SetLoadoutResult`, `ShopUpdate`, `PlaceTurret`, `PlaceTurretResult`, `TurretPlaced`, `UpgradeTurret`, `UpgradeTurretResult`, `TurretUpgraded`, `SessionCoinsUpdate`, `KillEarningsUpdate`, `TurretGameOver`
+    - Add to remote creation list in LobbyManager.init() or GameManager.init()
+    - _Requirements: 3.1, 3.7_
+  - [ ]* 4.6 Write property test for Property 8: Turret Purchase Unlocks and Deducts
+    - **Property 8: Turret Purchase Unlocks and Deducts**
+    - For any player with sufficient persistent coins and a locked turret, purchasing unlocks it and deducts shopPrice
+    - **Validates: Requirements 3.3**
+  - [ ]* 4.7 Write property test for Property 9: Default Turret Unlocked
+    - **Property 9: Default Turret Unlocked**
+    - For any newly initialized player, turret id 1 is in the unlocked set without purchase
+    - **Validates: Requirements 3.5**
+  - [ ]* 4.8 Write property test for Property 10: Loadout Validation
+    - **Property 10: Loadout Validation**
+    - A loadout is accepted iff it has exactly 3 ids all in the unlocked set; fewer than 3 is rejected
+    - **Validates: Requirements 4.1, 4.2**
+  - [ ]* 4.9 Write property test for Property 11: Loadout Toggle Deselect
+    - **Property 11: Loadout Toggle Deselect**
+    - Selecting a turret already in the loadout removes it, reducing count by 1
+    - **Validates: Requirements 4.3**
+  - [ ]* 4.10 Write property test for Property 12: Loadout Persistence Round Trip
+    - **Property 12: Loadout Persistence Round Trip**
+    - Setting a valid loadout and retrieving it returns the same 3 turret ids
+    - **Validates: Requirements 4.4**
+
+- [x] 5. Checkpoint — Verify shop and loadout logic
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 6. Implement TurretManager — placement and upgrades
+  - [x] 6.1 Create `src/server/TurretManager.luau` with TurretInstance type and module state
+    - Track turrets in `turrets: { [string]: TurretInstance }`, id counter, player loadouts reference
+    - _Requirements: 5.2_
+  - [x] 6.2 Implement `placeTurret(userId, turretTypeId, gridX, gridZ, worldPos)` function
+    - Validate turret type exists, turret is in player's loadout, slot is unoccupied (check both combo towers and turrets), player has sufficient session coins
+    - Deduct session coins via EconomyManager, create TurretInstance at level 1 with base stats, build turret model
+    - _Requirements: 5.2, 5.3, 5.4, 5.5_
+  - [x] 6.3 Implement `upgradeTurret(turretInstanceId, userId)` function
+    - Validate turret exists, owned by player, level < 3, player has sufficient session coins
+    - Calculate upgrade cost: `placementCost * targetLevel`
+    - Apply stat multipliers: `baseStat * multiplier ^ (level - 1)` for damage, range, fireRate
+    - Deduct session coins, increment level
+    - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6_
+  - [x] 6.4 Implement `getUpgradeCost(turretTypeId, targetLevel)` helper
+    - Returns `placementCost * targetLevel`
+    - _Requirements: 7.6_
+  - [x] 6.5 Implement `clearAll()` and `getTurrets()` utility functions
+    - _Requirements: 5.2_
+  - [ ]* 6.6 Write property test for Property 13: Turret Placement on Unoccupied Slot
+    - **Property 13: Turret Placement on Unoccupied Slot**
+    - For any player with sufficient session coins and valid loadout turret, placing on unoccupied slot succeeds with level 1 and base stats
+    - **Validates: Requirements 5.2, 5.3**
+  - [ ]* 6.7 Write property test for Property 14: Occupied Slot Rejects Placement
+    - **Property 14: Occupied Slot Rejects Placement**
+    - Placing on an already-occupied slot fails and leaves existing turret unchanged
+    - **Validates: Requirements 5.4**
+  - [ ]* 6.8 Write property test for Property 17: Upgrade Stat Scaling
+    - **Property 17: Upgrade Stat Scaling**
+    - For any turret type and level L in [1,3], stats equal baseStat * multiplier^(L-1)
+    - **Validates: Requirements 7.2**
+  - [ ]* 6.9 Write property test for Property 18: Upgrade Applies Multipliers and Deducts Cost
+    - **Property 18: Upgrade Applies Multipliers and Deducts Cost**
+    - Upgrading increments level, applies multipliers to all stats, deducts placementCost * targetLevel
+    - **Validates: Requirements 7.3**
+  - [ ]* 6.10 Write property test for Property 19: Upgrade Cost Formula
+    - **Property 19: Upgrade Cost Formula**
+    - getUpgradeCost(turretTypeId, L) returns exactly placementCost * L for L in [2,3]
+    - **Validates: Requirements 7.6**
+
+- [x] 7. Implement TurretManager — targeting and shooting
+  - [x] 7.1 Implement targeting logic: scan enemies within turret range, select closest
+    - Reuse EnemyManager.getActiveEnemies() pattern from existing TowerManager
+    - _Requirements: 6.1, 6.2_
+  - [x] 7.2 Implement firing logic: check cooldown, deal damage, set cooldown to `1 / fireRate`
+    - Fire visual projectile from turret to target (similar to existing TowerManager pattern)
+    - _Requirements: 6.3, 6.4, 6.5_
+  - [x] 7.3 Implement `update(dt)` function called each heartbeat
+    - Iterate all turret instances, decrement cooldowns, find targets, fire when ready
+    - _Requirements: 6.1, 6.5_
+  - [ ]* 7.4 Write property test for Property 15: Targeting Selects Closest Enemy in Range
+    - **Property 15: Targeting Selects Closest Enemy in Range**
+    - The targeting function returns the enemy with minimal distance among those within range; nil if none in range
+    - **Validates: Requirements 6.1, 6.2**
+  - [ ]* 7.5 Write property test for Property 16: Firing Deals Correct Damage and Sets Cooldown
+    - **Property 16: Firing Deals Correct Damage and Sets Cooldown**
+    - After firing, damage dealt equals turret's damage stat and cooldown is set to 1/fireRate
+    - **Validates: Requirements 6.3, 6.5**
+
+- [x] 8. Checkpoint — Verify TurretManager core logic
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 9. Integrate turret system into GameManager
+  - [x] 9.1 Modify `GameManager.createInstance` to call `EconomyManager.initSessionCoins(userId, 100)` and `EconomyManager.initKillEarnings(userId)` for each player on init
+    - _Requirements: 2.1_
+  - [x] 9.2 Modify `onEnemyKilled` to call `EconomyManager.addSessionCoins(userId, reward)` and `EconomyManager.addKillEarnings(userId, reward)` for each player
+    - Fire `SessionCoinsUpdate` and `KillEarningsUpdate` remotes to clients
+    - _Requirements: 2.2, 2.3_
+  - [x] 9.3 Modify game over handler to call `EconomyManager.bankKillEarnings(userId)` for each player
+    - Fire `TurretGameOver` remote with killEarningsBanked and newPersistentBalance
+    - _Requirements: 2.6, 2.7_
+  - [x] 9.4 Wire `PlaceTurret` remote in GameManager to call `TurretManager.placeTurret`
+    - Validate turret is in player's loadout, deduct session coins, fire `PlaceTurretResult` and `TurretPlaced`
+    - _Requirements: 5.2, 5.3, 5.4, 5.5_
+  - [x] 9.5 Wire `UpgradeTurret` remote in GameManager to call `TurretManager.upgradeTurret`
+    - Fire `UpgradeTurretResult` and `TurretUpgraded` remotes
+    - _Requirements: 7.3, 7.4, 7.5_
+  - [x] 9.6 Call `TurretManager.update(dt)` in the GameManager update loop alongside `TowerManager.update(dt)`
+    - _Requirements: 6.1_
+  - [x] 9.7 Call `TurretManager.clearAll()` in GameManager `stop()` method
+    - _Requirements: 5.2_
+
+- [x] 10. Checkpoint — Verify server integration
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 11. Create TurretShopUI client module
+  - [x] 11.1 Create `src/client/TurretShopUI.luau` with `TurretShopUI.init()`
+    - Build a ScreenGui with scrolling list of all turret types from TurretData
+    - Each entry shows name, description, stats (damage, range, fireRate), shopPrice, placementCost
+    - _Requirements: 3.1_
+  - [x] 11.2 Implement locked/unlocked visual distinction
+    - Locked turrets show "Buy" button; unlocked turrets show checkmark
+    - Display player's current persistent coins balance
+    - _Requirements: 3.2, 3.7_
+  - [x] 11.3 Wire Buy button to fire `BuyTurret` remote, listen to `BuyTurretResult` and `ShopUpdate` for UI updates
+    - Show insufficient coins message on failure
+    - Update UI immediately on successful purchase
+    - _Requirements: 3.3, 3.4, 3.6_
+
+- [x] 12. Create LoadoutSelector client module
+  - [x] 12.1 Create `src/client/LoadoutSelector.luau` with `LoadoutSelector.init()`
+    - Display unlocked turrets as selectable tiles with 3 loadout slots
+    - Tapping a turret toggles selection; tapping a selected turret deselects it
+    - _Requirements: 4.1, 4.3_
+  - [x] 12.2 Implement auto-fill logic: if only 1 turret unlocked, auto-fill all 3 slots
+    - _Requirements: 4.5_
+  - [x] 12.3 Wire `SetLoadout` remote on selection change, listen to `SetLoadoutResult`
+    - Prevent game start via area pads while fewer than 3 turrets selected
+    - _Requirements: 4.2, 4.6_
+
+- [x] 13. Create TurretHUD client module
+  - [x] 13.1 Create `src/client/TurretHUD.luau` with `TurretHUD.init()`
+    - Display 3 loadout turret buttons at bottom of screen during gameplay
+    - Show each turret's placementCost in session coins
+    - Show current session coin balance
+    - _Requirements: 5.1, 8.1_
+  - [x] 13.2 Implement turret placement mode: clicking a loadout button enters placement mode using grid slot system
+    - Show ghost preview of turret model and range circle while choosing slot
+    - Highlight currently active turret in loadout HUD
+    - _Requirements: 5.6, 8.2, 8.3, 8.4_
+  - [x] 13.3 Wire placement confirmation to fire `PlaceTurret` remote, listen to `PlaceTurretResult` and `TurretPlaced`
+    - Display error messages on placement failure
+    - _Requirements: 5.2, 5.4, 5.5_
+  - [x] 13.4 Implement upgrade panel: clicking a placed turret shows current level, stats, and upgrade cost
+    - Wire upgrade button to fire `UpgradeTurret` remote, listen to `UpgradeTurretResult` and `TurretUpgraded`
+    - Show "Max Level" when turret is at level 3
+    - _Requirements: 7.1, 7.3, 7.4, 7.5_
+  - [x] 13.5 Listen to `SessionCoinsUpdate`, `KillEarningsUpdate`, and `TurretGameOver` remotes for UI updates
+    - Display kill earnings banked on game over results screen
+    - _Requirements: 2.2, 2.7_
+
+- [x] 14. Wire client modules into init.client.luau
+  - [x] 14.1 Require and call `TurretShopUI.init()`, `LoadoutSelector.init()`, and `TurretHUD.init()` from `src/client/init.client.luau`
+    - Conditionally show shop/loadout in lobby, turret HUD during gameplay
+    - _Requirements: 3.1, 4.1, 5.1_
+
+- [x] 15. Extend Types.luau with turret type definitions
+  - [x] 15.1 Add `TurretType`, `TurretInstance`, and turret-related type exports to `src/shared/Types.luau`
+    - _Requirements: 1.1_
+
+- [x] 16. Set up test infrastructure and property generators
+  - [x] 16.1 Extend `src/tests/PropertyGen.luau` with turret-specific generators
+    - Add `turretTypeId()`, `sessionCoinAmount()`, `persistentCoinAmount()`, `turretLevel()`, `gridPosition()`, `enemyPosition()`, `loadout()`
+    - _Requirements: Testing strategy from design_
+  - [x] 16.2 Create `src/tests/TurretTestHarness.luau` with mock EconomyManager, mock EnemyManager, and test helpers
+    - Provide isolated state for each test run
+    - _Requirements: Testing strategy from design_
+  - [x] 16.3 Create `src/tests/TurretPropertyTests.luau` shell with `runAll()` function
+    - _Requirements: Testing strategy from design_
+  - [x] 16.4 Update `src/tests/RunPropertyTests.luau` to require and run TurretPropertyTests alongside LobbyPropertyTests
+    - _Requirements: Testing strategy from design_
+
+- [x] 17. Final checkpoint — Full integration verification
+  - Ensure all tests pass, ask the user if questions arise.
+
+## Notes
+
+- Tasks marked with `*` are optional and can be skipped for faster MVP
+- Each task references specific requirements for traceability
+- Checkpoints ensure incremental validation
+- Property tests validate universal correctness properties (19 total across tasks 1, 2, 4, 6, 7)
+- The existing combo tower system (TowerManager, TowerData, TowerPlacer) remains unchanged; turrets run alongside it
+- All code is in Luau targeting the Roblox/Rojo project structure

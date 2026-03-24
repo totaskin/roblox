@@ -3,32 +3,32 @@
 
 local ENEMY_TYPES = {
 	Grunt = {
-		name="Grunt", health=50, speed=12, reward=5, isBoss=false, size=1.0,
+		name="Bombardiro Crocodilo", health=60, speed=12, reward=15, isBoss=false, size=1.8,
 	},
 	Runner = {
-		name="Runner", health=30, speed=20, reward=4, isBoss=false, size=0.8,
+		name="Tung Tung Tung Sahur", health=40, speed=18, reward=10, isBoss=false, size=1.4,
 	},
 	Brute = {
-		name="Brute", health=150, speed=7, reward=12, isBoss=false, size=1.5,
+		name="Tralalero Tralala", health=180, speed=7, reward=20, isBoss=false, size=2.2,
 	},
 	Swarm = {
-		name="Swarm", health=15, speed=16, reward=2, isBoss=false, size=0.6,
+		name="Lirili Larila", health=20, speed=15, reward=6, isBoss=false, size=1.0,
 	},
 	Armored = {
-		name="Armored", health=200, speed=8, reward=15, isBoss=false, size=1.2,
+		name="Cappuccino Assassino", health=300, speed=7, reward=25, isBoss=false, size=2.0,
 	},
 	-- Bosses (every 5 rounds)
 	BossGrunt = {
-		name="BossGrunt", health=500, speed=10, reward=50, isBoss=true, size=2.5,
+		name="La Vaca Saturno Saturnita", health=400, speed=7, reward=60, isBoss=true, size=3.5,
 	},
 	BossRunner = {
-		name="BossRunner", health=300, speed=16, reward=60, isBoss=true, size=2.0,
+		name="Brr Brr Patapim", health=300, speed=14, reward=80, isBoss=true, size=3.0,
 	},
 	BossBrute = {
-		name="BossBrute", health=1200, speed=6, reward=100, isBoss=true, size=3.5,
+		name="Spaghettino Macaronino", health=1000, speed=5, reward=120, isBoss=true, size=4.5,
 	},
 	BossVoid = {
-		name="BossVoid", health=5000, speed=8, reward=500, isBoss=true, size=4.0,
+		name="Glorbo Fruttodrillo", health=4000, speed=7, reward=300, isBoss=true, size=5.5,
 	},
 }
 
@@ -36,12 +36,19 @@ local ENEMY_TYPES = {
 local function scaleEnemy(baseType: string, round: number)
 	local base = ENEMY_TYPES[baseType]
 	assert(base, "Unknown enemy type: " .. baseType)
-	local scale = 1 + (round - 1) * 0.08 -- 8% stronger per round
+	-- Accelerating difficulty: scaling % increases each round
+	-- Round 1: 1.0x, Round 2: 1.4x, Round 3: 2.2x, Round 5: 6.7x, Round 10: 117x
+	local scale = 1
+	for r = 2, round do
+		local rampRate = 1.3 + (r - 1) * 0.05 -- starts at 1.35, grows by 0.05 each round
+		scale = scale * rampRate
+	end
 	return {
+		type     = baseType,
 		name     = base.name,
 		health   = math.floor(base.health * scale),
-		speed    = base.speed + round * 0.02, -- very slight speed creep
-		reward   = base.reward,
+		speed    = base.speed + round * 0.04 + round * round * 0.01, -- accelerating speed creep
+		reward   = math.floor(base.reward * (1 + (round - 1) * 0.08)), -- 8% linear reward scaling
 		isBoss   = base.isBoss,
 		size     = base.size,
 	}
@@ -61,8 +68,8 @@ local function generateWave(round: number)
 	local isBossRound = (round % 5 == 0)
 	local enemies = {}
 
-	-- Scale enemy count with round
-	local baseCount = math.floor(5 + round * 1.5)
+	-- Scale enemy count with round — accelerating growth
+	local baseCount = math.floor(8 + round * 3 + round * round * 0.5)
 
 	if isBossRound then
 		-- Boss wave: fewer normal enemies + 1 boss
@@ -71,23 +78,24 @@ local function generateWave(round: number)
 		table.insert(enemies, { enemyType=getBossType(round), count=1, interval=0 })
 	else
 		-- Normal wave: mix of enemy types based on round progression
-		if round < 5 then
+		if round < 3 then
 			table.insert(enemies, { enemyType="Grunt", count=baseCount, interval=1.0 })
-		elseif round < 15 then
-			table.insert(enemies, { enemyType="Grunt",  count=math.floor(baseCount*0.6), interval=1.0 })
-			table.insert(enemies, { enemyType="Runner", count=math.floor(baseCount*0.4), interval=0.7 })
-		elseif round < 30 then
-			table.insert(enemies, { enemyType="Grunt",  count=math.floor(baseCount*0.4), interval=0.9 })
+		elseif round < 8 then
+			table.insert(enemies, { enemyType="Grunt",  count=math.floor(baseCount*0.5), interval=0.9 })
+			table.insert(enemies, { enemyType="Runner", count=math.floor(baseCount*0.5), interval=0.6 })
+		elseif round < 18 then
+			table.insert(enemies, { enemyType="Grunt",  count=math.floor(baseCount*0.35), interval=0.9 })
 			table.insert(enemies, { enemyType="Runner", count=math.floor(baseCount*0.3), interval=0.6 })
-			table.insert(enemies, { enemyType="Brute",  count=math.floor(baseCount*0.3), interval=1.5 })
-		elseif round < 60 then
-			table.insert(enemies, { enemyType="Runner",  count=math.floor(baseCount*0.3), interval=0.6 })
-			table.insert(enemies, { enemyType="Brute",   count=math.floor(baseCount*0.3), interval=1.2 })
-			table.insert(enemies, { enemyType="Swarm",   count=math.floor(baseCount*0.4), interval=0.3 })
-		else
+			table.insert(enemies, { enemyType="Brute",  count=math.floor(baseCount*0.35), interval=1.5 })
+		elseif round < 45 then
+			table.insert(enemies, { enemyType="Runner",  count=math.floor(baseCount*0.25), interval=0.5 })
 			table.insert(enemies, { enemyType="Brute",   count=math.floor(baseCount*0.3), interval=1.0 })
-			table.insert(enemies, { enemyType="Swarm",   count=math.floor(baseCount*0.3), interval=0.3 })
-			table.insert(enemies, { enemyType="Armored", count=math.floor(baseCount*0.4), interval=1.2 })
+			table.insert(enemies, { enemyType="Swarm",   count=math.floor(baseCount*0.25), interval=0.3 })
+			table.insert(enemies, { enemyType="Armored", count=math.floor(baseCount*0.2), interval=1.4 })
+		else
+			table.insert(enemies, { enemyType="Brute",   count=math.floor(baseCount*0.25), interval=0.8 })
+			table.insert(enemies, { enemyType="Swarm",   count=math.floor(baseCount*0.25), interval=0.25 })
+			table.insert(enemies, { enemyType="Armored", count=math.floor(baseCount*0.5), interval=1.0 })
 		end
 	end
 

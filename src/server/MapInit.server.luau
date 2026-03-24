@@ -1,0 +1,3 @@
+-- MapInit.server.luau
+-- Map is now built on-demand when a game launches via GameManager.init().
+-- No longer builds at startup so the lobby stays clean.

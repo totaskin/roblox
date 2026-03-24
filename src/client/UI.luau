@@ -397,8 +397,8 @@ function UI.init()
 	end)
 
 	Remotes:WaitForChild("GameOver").OnClientEvent:Connect(function(reason: string, round: number)
-		overlay.Visible = true
-		overlayLabel.Text = "GAME OVER\n" .. reason .. "\nReached Round " .. round
+		-- Brief banner only; the LobbyShowResults screen handles the full results + OK button
+		showBanner("GAME OVER — " .. reason .. " — Round " .. round, 4)
 	end)
 
 	-- Request initial inventory

@@ -52,4 +52,33 @@ export type TowerInstance = {
 	ownerId: number,
 }
 
+export type TurretType = {
+	id: number,
+	name: string,
+	description: string,
+	damage: number,
+	range: number,
+	fireRate: number,
+	shopPrice: number,
+	placementCost: number,
+	upgradeMultipliers: {
+		damage: number,
+		range: number,
+		fireRate: number,
+	},
+}
+
+export type TurretInstance = {
+	id: string,
+	turretTypeId: number,
+	ownerId: number,
+	gridX: number,
+	gridZ: number,
+	position: Vector3,
+	level: number,
+	stats: { damage: number, range: number, fireRate: number },
+	model: Model,
+	cooldown: number,
+}
+
 return {}
