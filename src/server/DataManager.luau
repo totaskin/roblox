@@ -1,5 +1,5 @@
 -- DataManager.luau
--- Centralized module for persisting player data (coins and turret unlocks)
+-- Centralized module for persisting player data (coins, turret unlocks, and runes)
 -- via Roblox DataStoreService. Loads on join, saves on leave, auto-saves,
 -- and saves all on server shutdown.
 
@@ -10,6 +10,7 @@ local TurretData = require(game.ReplicatedStorage.Shared.TurretData)
 -- Lazy-require to break circular dependency (DataManager <-> EconomyManager <-> LobbyManager)
 local EconomyManager
 local LobbyManager
+local RuneManager
 local function getEconomyManager()
 	if not EconomyManager then
 		EconomyManager = require(script.Parent.EconomyManager)
@@ -22,6 +23,12 @@ local function getLobbyManager()
 	end
 	return LobbyManager
 end
+local function getRuneManager()
+	if not RuneManager then
+		RuneManager = require(script.Parent.RuneManager)
+	end
+	return RuneManager
+end
 
 local DataManager = {}
 
@@ -30,6 +37,8 @@ export type PlayerData = {
 	version: number,
 	coins: number,
 	unlocks: { number },
+	loadout: { number }?,
+	runes: { [number]: number }?,
 }
 
 export type PlayerTracker = {
@@ -65,7 +74,7 @@ end
 function DataManager.validatePlayerData(raw: any): PlayerData
 	-- Nil or non-table input: return defaults
 	if raw == nil or typeof(raw) ~= "table" then
-		return { version = 1, coins = 0, unlocks = { 1 } }
+		return { version = 1, coins = 0, unlocks = { 1 }, runes = {} }
 	end
 
 	-- Migrate version: if missing or unrecognized, set to 1
@@ -99,10 +108,37 @@ function DataManager.validatePlayerData(raw: any): PlayerData
 		table.insert(unlocks, 1)
 	end
 
+	-- Validate loadout: array of up to 3 valid turret ids that are in unlocks
+	local loadout: { number } = {}
+	local unlockSet: { [number]: boolean } = {}
+	for _, id in unlocks do
+		unlockSet[id] = true
+	end
+	if typeof(raw.loadout) == "table" then
+		for _, id in raw.loadout do
+			if typeof(id) == "number" and unlockSet[id] and #loadout < 3 then
+				table.insert(loadout, id)
+			end
+		end
+	end
+
+	-- Validate runes: dictionary of rune id (1-10) to count (non-negative integer)
+	local runes: { [number]: number } = {}
+	if typeof(raw.runes) == "table" then
+		for id, count in pairs(raw.runes) do
+			local numId = tonumber(id)
+			if numId and numId >= 1 and numId <= 10 and typeof(count) == "number" and count >= 0 then
+				runes[numId] = math.floor(count)
+			end
+		end
+	end
+
 	return {
 		version = version,
 		coins = coins,
 		unlocks = unlocks,
+		loadout = loadout,
+		runes = runes,
 	}
 end
 
@@ -115,8 +151,7 @@ function DataManager.markDirty(userId: number)
 end
 
 -- Get the current PlayerData for a userId by reading from in-memory modules.
--- Reads coins from EconomyManager and unlocks from LobbyManager, converting
--- the dictionary format { [number]: boolean } to an array { number }.
+-- Reads coins from EconomyManager, unlocks from LobbyManager, and runes from RuneManager.
 function DataManager.getPlayerData(userId: number): PlayerData
 	local coins = getEconomyManager().getPersistentCoins(userId)
 
@@ -129,10 +164,15 @@ function DataManager.getPlayerData(userId: number): PlayerData
 		end
 	end
 
+	-- Get runes from RuneManager
+	local runes = getRuneManager().getInventory(userId)
+
 	return {
 		version = 1,
 		coins = coins,
 		unlocks = unlocks,
+		loadout = getLobbyManager().getPlayerLoadout(userId),
+		runes = runes,
 	}
 end
 
@@ -162,7 +202,7 @@ local function saveWithRetry(key: string, data: PlayerData): boolean
 	return false
 end
 
--- Load player data from DataStore and initialize EconomyManager + LobbyManager state.
+-- Load player data from DataStore and initialize EconomyManager + LobbyManager + RuneManager state.
 -- Called from PlayerAdded handler.
 function DataManager.loadPlayer(player: Player)
 	local userId = player.UserId
@@ -177,7 +217,7 @@ function DataManager.loadPlayer(player: Player)
 		data = DataManager.validatePlayerData(result)
 	else
 		warn("[DataManager] Failed to load data for", key, ":", result)
-		data = { version = 1, coins = 0, unlocks = { 1 } }
+		data = { version = 1, coins = 0, unlocks = { 1 }, runes = {} }
 	end
 
 	-- Initialize EconomyManager with loaded/default coins
@@ -189,6 +229,10 @@ function DataManager.loadPlayer(player: Player)
 		unlockDict[id] = true
 	end
 	getLobbyManager().setPlayerUnlocks(userId, unlockDict)
+	getLobbyManager().setPlayerLoadout(userId, data.loadout or {})
+
+	-- Initialize RuneManager with loaded runes
+	getRuneManager().setInventory(userId, data.runes or {})
 
 	-- Create tracker entry (clean state, just loaded)
 	playerTrackers[userId] = {

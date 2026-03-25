@@ -2,11 +2,13 @@
 -- Handles turret placement, targeting, shooting, upgrades, support towers, and cleanup
 -- Turrets are fixed-stat blueprints (not combo-based) placed using session coins
 
+local Players        = game:GetService("Players")
 local TurretData    = require(game.ReplicatedStorage.Shared.TurretData)
 local ResourceData  = require(game.ReplicatedStorage.Shared.ResourceData)
 local EnemyManager  = require(script.Parent.EnemyManager)
 local EconomyManager = require(script.Parent.EconomyManager)
 local TowerManager  = require(script.Parent.TowerManager)
+local GamepassManager = require(script.Parent.GamepassManager)
 
 local TurretManager = {}
 
@@ -25,10 +27,17 @@ export type TurretInstance = {
 	supportCooldown: number?,
 }
 
+-- Player color palette: Blue (Player 1), Red (Player 2)
+local PLAYER_COLORS: { Color3 } = {
+	Color3.fromRGB(50, 130, 255),   -- Blue (Player 1)
+	Color3.fromRGB(255, 80, 80),    -- Red (Player 2)
+}
+
 -- Module state
 local turrets: { [string]: TurretInstance } = {}
 local turretIdCounter = 0
 local playerLoadouts: { [number]: { number } }? = nil
+local playerColors: { [number]: Color3 } = {}
 
 -- Callbacks for support tower effects (set by GameManager)
 local onSupportMoney: ((ownerId: number, amount: number) -> ())? = nil
@@ -45,6 +54,20 @@ end
 -- Store a reference to the player loadouts table
 function TurretManager.setPlayerLoadouts(loadouts: { [number]: { number } })
 	playerLoadouts = loadouts
+end
+
+-- Assign each player a color from PLAYER_COLORS by join order (index in the array)
+function TurretManager.assignPlayerColors(players: { Player })
+	playerColors = {}
+	for i, player in ipairs(players) do
+		if i > #PLAYER_COLORS then break end
+		playerColors[player.UserId] = PLAYER_COLORS[i]
+	end
+end
+
+-- Return the assigned color for a player, or nil if not assigned
+function TurretManager.getPlayerColor(userId: number): Color3?
+	return playerColors[userId]
 end
 
 function TurretManager.onSupportMoney(callback: (ownerId: number, amount: number) -> ())
@@ -89,8 +112,35 @@ local function isSlotOccupied(gridX: number, gridZ: number): boolean
 	return false
 end
 
+-- Internal helper: apply owner color to a turret model
+local function applyOwnerColor(model: Model, ownerColor: Color3, ownerName: string)
+	-- Set Body.Color if Body part exists, silently skip otherwise
+	local body = model:FindFirstChild("Body")
+	if body then
+		body.Color = ownerColor
+	end
+
+	-- Set OwnerColor attribute on the model
+	model:SetAttribute("OwnerColor", ownerColor)
+
+	-- Add OwnerLabel to the TurretInfo BillboardGui
+	local billboard = model:FindFirstChild("TurretInfo")
+	if billboard then
+		local ownerLabel = Instance.new("TextLabel")
+		ownerLabel.Name = "OwnerLabel"
+		ownerLabel.Size = UDim2.new(1, 0, 0.35, 0)
+		ownerLabel.Position = UDim2.new(0, 0, 1, 0)
+		ownerLabel.Text = ownerName
+		ownerLabel.TextColor3 = ownerColor
+		ownerLabel.BackgroundTransparency = 1
+		ownerLabel.TextScaled = true
+		ownerLabel.Font = Enum.Font.GothamBold
+		ownerLabel.Parent = billboard
+	end
+end
+
 -- Builds the turret model in workspace (distinct look from combo towers)
-local function buildTurretModel(position: Vector3, turretType: any, level: number): Model
+local function buildTurretModel(position: Vector3, turretType: any, level: number, ownerColor: Color3?, ownerName: string?): Model
 	local model = Instance.new("Model")
 	model.Name = turretType.name
 
@@ -280,6 +330,11 @@ local function buildTurretModel(position: Vector3, turretType: any, level: numbe
 
 	model.Parent = workspace
 
+	-- Apply owner color if provided
+	if ownerColor then
+		applyOwnerColor(model, ownerColor, ownerName or "")
+	end
+
 	return model
 end
 
@@ -321,7 +376,16 @@ function TurretManager.placeTurret(
 
 	-- Create TurretInstance at level 1 with base stats
 	local id = newTurretId()
-	local model = buildTurretModel(worldPos, turretType, 1)
+
+	-- Look up owner color and display name for visual ownership
+	local ownerColor = TurretManager.getPlayerColor(userId)
+	local ownerName: string? = nil
+	local player = Players:GetPlayerByUserId(userId)
+	if player then
+		ownerName = player.DisplayName
+	end
+
+	local model = buildTurretModel(worldPos, turretType, 1, ownerColor, ownerName)
 
 	-- Set the actual instance id on the model so clients can read it
 	model:SetAttribute("TurretInstanceId", id)
@@ -436,6 +500,32 @@ function TurretManager.upgradeTurret(turretInstanceId: string, userId: number): 
 			prompt.ActionText = "Upgrade 💰" .. nextCost
 			prompt.ObjectText = (turretType and turretType.name or "Turret") .. " Lv" .. turret.level
 		end
+
+		-- Preserve owner visuals: re-apply Body.Color from OwnerColor attribute
+		local ownerColor = model:GetAttribute("OwnerColor")
+		if ownerColor then
+			local body = model:FindFirstChild("Body")
+			if body then
+				body.Color = ownerColor
+			end
+
+			-- Ensure OwnerLabel still exists in the billboard; re-create if missing
+			local billboard2 = model:FindFirstChild("TurretInfo")
+			if billboard2 and not billboard2:FindFirstChild("OwnerLabel") then
+				local player = Players:GetPlayerByUserId(turret.ownerId)
+				local ownerName = if player then player.DisplayName else ""
+				local ownerLabel = Instance.new("TextLabel")
+				ownerLabel.Name = "OwnerLabel"
+				ownerLabel.Size = UDim2.new(1, 0, 0.35, 0)
+				ownerLabel.Position = UDim2.new(0, 0, 1, 0)
+				ownerLabel.Text = ownerName
+				ownerLabel.TextColor3 = ownerColor
+				ownerLabel.BackgroundTransparency = 1
+				ownerLabel.TextScaled = true
+				ownerLabel.Font = Enum.Font.GothamBold
+				ownerLabel.Parent = billboard2
+			end
+		end
 	end
 
 	return true, nil
@@ -452,6 +542,7 @@ function TurretManager.clearAll()
 		if t.model then t.model:Destroy() end
 	end
 	turrets = {}
+	playerColors = {}
 end
 
 -- Task 7.1: Targeting logic — find closest enemy within turret range
@@ -485,8 +576,8 @@ local SHOOT_SOUNDS = {
 	"rbxassetid://9114127834",   -- splat
 }
 
-local function playShootSound(position: Vector3)
-	local soundId = SHOOT_SOUNDS[math.random(1, #SHOOT_SOUNDS)]
+local function playShootSound(position: Vector3, overrideSoundId: string?)
+	local soundId = overrideSoundId or SHOOT_SOUNDS[math.random(1, #SHOOT_SOUNDS)]
 	local part = Instance.new("Part")
 	part.Size = Vector3.new(1, 1, 1)
 	part.Position = position
@@ -510,8 +601,8 @@ local function playShootSound(position: Vector3)
 end
 
 -- Vibrant firing effect — scaled by rune count. runeColors is an optional list of Color3 from applied runes.
-local function fireProjectile(from: Vector3, to: Vector3, runeColors: { Color3 }?)
-	playShootSound(from)
+local function fireProjectile(from: Vector3, to: Vector3, runeColors: { Color3 }?, shootSoundId: string?)
+	playShootSound(from, shootSoundId)
 
 	local runeCount = if runeColors then #runeColors else 0
 	-- Scale factor: 0 runes = 1.0 (small), each rune adds 0.35
@@ -919,10 +1010,26 @@ function TurretManager.update(dt: number)
 			end
 		end
 
-		task.spawn(fireProjectile, fireFrom, targetPos, runeColors)
+		-- Get turret-specific shoot sound if defined
+		local shootSoundId: string? = nil
+		if turretType then
+			shootSoundId = turretType.shootSound
+		end
+
+		task.spawn(fireProjectile, fireFrom, targetPos, runeColors, shootSoundId)
 
 		-- Deal damage equal to turret's damage stat (single-target only)
-		EnemyManager.damageEnemy(targetId, stats.damage)
+		-- Apply 2X damage multiplier if owner has the gamepass
+		local damageMultiplier = GamepassManager.getDamageMultiplier(turret.ownerId)
+		EnemyManager.damageEnemy(targetId, stats.damage * damageMultiplier)
+
+		-- Apply rune visual effects on the enemy
+		if getTurretRunesCallback then
+			local runeSlot = getTurretRunesCallback(turret.id)
+			if runeSlot and #runeSlot > 0 then
+				EnemyManager.applyRuneEffect(targetId, runeSlot)
+			end
+		end
 
 		-- Frost turret applies slow effect
 		local turretType2 = TurretData.getTurretById(turret.turretTypeId)

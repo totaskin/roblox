@@ -1,0 +1,25 @@
+# Tasks
+
+- [x] 1. Define player color palette and assignment logic
+  - [x] 1.1 Add `PLAYER_COLORS` constant (2 distinct Color3 values) to `TurretManager.luau`
+  - [x] 1.2 Add `playerColors: { [number]: Color3 }` module state and `assignPlayerColors(players)` function that maps each player's userId to a palette color by join order
+  - [x] 1.3 Add `getPlayerColor(userId): Color3?` getter function
+  - [x] 1.4 Clear `playerColors` in `TurretManager.clearAll()`
+- [x] 2. Apply owner color on turret placement
+  - [x] 2.1 Add internal `applyOwnerColor(model, ownerColor, ownerName)` helper that sets Body.Color, adds OwnerLabel to BillboardGui, and sets "OwnerColor" model attribute
+  - [x] 2.2 Modify `buildTurretModel` to accept `ownerColor` and `ownerName` parameters and call `applyOwnerColor`
+  - [x] 2.3 Modify `placeTurret` to look up the owner's color via `getPlayerColor` and pass it along with the player's display name to `buildTurretModel`
+- [x] 3. Preserve owner visuals on upgrade
+  - [x] 3.1 Modify `upgradeTurret` to preserve the OwnerLabel (text and TextColor3) and Body.Color when updating the BillboardGui and model
+- [x] 4. Broadcast color assignments via remote events
+  - [x] 4.1 Add `PlayerColorsAssigned` to the remote event list in `GameManager.init()`
+  - [x] 4.2 Call `TurretManager.assignPlayerColors(players)` at game session start in `GameManager` and broadcast `PlayerColorsAssigned` with the color map to all clients
+  - [x] 4.3 Extend the existing `TurretPlaced` broadcast to include `ownerColor` as an additional argument
+- [x] 5. Client-side color handling in TurretHUD
+  - [x] 5.1 Add `playerColorMap` and `localPlayerColor` state variables to `TurretHUD`
+  - [x] 5.2 Listen for `PlayerColorsAssigned` remote event in `TurretHUD.init()` and populate `playerColorMap` and `localPlayerColor`
+  - [x] 5.3 Modify `buildGhost` to tint the ghost Body part with `localPlayerColor`
+- [x] 6. Extend test harness and write property tests
+  - [x] 6.1 Add color assignment logic to `TurretTestHarness` (mock `assignPlayerColors`, `getPlayerColor`, `applyOwnerColor`)
+  - [x] 6.2 Add `playerColor()` and `playerDisplayName()` generators to `PropertyGen.luau`
+  - [x] 6.3 Write property tests in a new `PlayerColorPropertyTests.luau` covering all 6 correctness properties from the design

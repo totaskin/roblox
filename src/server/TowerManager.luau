@@ -3,6 +3,7 @@
 
 local TowerData    = require(game.ReplicatedStorage.Shared.TowerData)
 local EnemyManager = require(script.Parent.EnemyManager)
+local GamepassManager = require(script.Parent.GamepassManager)
 
 local TowerManager = {}
 
@@ -199,8 +200,10 @@ function TowerManager.update(dt: number)
 		task.spawn(fireProjectile, tower.position + Vector3.new(0, 3, 0), targetPos, projColor)
 
 		-- Apply damage and effects
+		-- Apply 2X damage multiplier if owner has the gamepass
+		local damageMultiplier = GamepassManager.getDamageMultiplier(tower.ownerId)
 		for _, hitId in ipairs(hitIds) do
-			local killed = EnemyManager.damageEnemy(hitId, stats.damage)
+			local killed = EnemyManager.damageEnemy(hitId, stats.damage * damageMultiplier)
 
 			-- Apply slow if not killed
 			if not killed and stats.slowFactor < 1 then

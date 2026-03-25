@@ -14,15 +14,15 @@ local Resources = {
 	[10] = { id = 10, name = "Void",     color = Color3.fromRGB(10,  10,  30),  hint = "Tears reality apart. Void-based effects. Very rare." },
 }
 
--- Returns the weighted resource drop for a given round
--- Round 1:    Resource 1 ~50%, Resource 10 ~0.1%
--- Round 1000: Resource 1 lower, Resource 10 ~10%
+-- Returns the weighted resource drop based on total boss kills
+-- Boss 1:    Ember ~50%, Void ~0.1%
+-- Boss 1000: Distribution flattens, Void ~10%
 local BASE_WEIGHT  = { 50, 20, 12, 7, 4, 3, 2, 1.5, 0.4, 0.1 }
 local FINAL_WEIGHT = { 15, 15, 13, 12, 11, 10, 9, 8, 7, 10 }
-local MAX_ROUND = 1000
+local MAX_BOSS_KILLS = 1000
 
-local function getDropWeights(round: number): { number }
-	local t = math.clamp(round / MAX_ROUND, 0, 1)
+local function getDropWeights(bossKillCount: number): { number }
+	local t = math.clamp(bossKillCount / MAX_BOSS_KILLS, 0, 1)
 	local weights = {}
 	for i = 1, 10 do
 		weights[i] = BASE_WEIGHT[i] + (FINAL_WEIGHT[i] - BASE_WEIGHT[i]) * t
@@ -30,9 +30,9 @@ local function getDropWeights(round: number): { number }
 	return weights
 end
 
--- Picks a random resource id based on round number
-local function rollResourceDrop(round: number): number
-	local weights = getDropWeights(round)
+-- Picks a random resource id based on total boss kills
+local function rollResourceDrop(bossKillCount: number): number
+	local weights = getDropWeights(bossKillCount)
 	local total = 0
 	for _, w in ipairs(weights) do total += w end
 

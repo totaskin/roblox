@@ -42,6 +42,14 @@ local function createMockRuneManager(turretRegistry: any)
 		return playerRuneInventories[userId] or {}
 	end
 
+	function rm.setInventory(userId: number, runes: { [number]: number })
+		local inventory = {}
+		for i = 1, 10 do
+			inventory[i] = runes[i] or 0
+		end
+		playerRuneInventories[userId] = inventory
+	end
+
 	function rm.setGamePhase(phase: string)
 		gamePhase = phase
 	end
@@ -52,8 +60,8 @@ local function createMockRuneManager(turretRegistry: any)
 
 	-- ── Boss Drop ──
 
-	function rm.awardBossDrop(userIds: { number }, round: number): number
-		local runeTypeId = ResourceData.rollResourceDrop(round)
+	function rm.awardBossDrop(userIds: { number }, bossKillCount: number): number
+		local runeTypeId = ResourceData.rollResourceDrop(bossKillCount)
 
 		for _, userId in ipairs(userIds) do
 			local inventory = playerRuneInventories[userId]
@@ -104,14 +112,15 @@ local function createMockRuneManager(turretRegistry: any)
 			return false, "Turret not found"
 		end
 
-		-- 3. Validate game phase is Intermission
-		if gamePhase ~= "Intermission" then
-			return false, "Runes can only be applied during intermission"
-		end
-
-		-- 4. Validate ownership
+		-- 3. Validate ownership
 		if turret.ownerId ~= userId then
 			return false, "Not your turret"
+		end
+
+		-- 4. Validate rune slot limit (max 3 runes per turret)
+		local currentSlots = turretRuneSlots[turretInstanceId] or {}
+		if #currentSlots >= 3 then
+			return false, "Turret already has 3 runes"
 		end
 
 		-- 5. Validate inventory count > 0
@@ -173,7 +182,8 @@ local function createMockRuneManager(turretRegistry: any)
 	end
 
 	function rm.clearAll()
-		playerRuneInventories = {}
+		-- Only clear turret-related state, NOT player inventories
+		-- Player inventories persist across games
 		turretRuneSlots = {}
 		turretRuneOwners = {}
 		gamePhase = "LOBBY"
@@ -251,8 +261,7 @@ function RuneTestHarness.new()
 	end
 
 	-- Helper: set up a valid scenario for rune application
-	-- Creates a player with inventory containing the rune, a turret owned by them,
-	-- and sets game phase to "Intermission"
+	-- Creates a player with inventory containing the rune and a turret owned by them
 	function self.setupValidScenario(userId: number, turretId: string, turretTypeId: number, runeTypeId: number)
 		-- Init player with 1 rune of the specified type
 		self.runeManager.initPlayer(userId)
@@ -261,9 +270,6 @@ function RuneTestHarness.new()
 
 		-- Add turret owned by this player
 		self.turretRegistry.addTurret(turretId, turretTypeId, userId)
-
-		-- Set game phase to Intermission
-		self.runeManager.setGamePhase("Intermission")
 	end
 
 	return self

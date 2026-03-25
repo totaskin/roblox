@@ -494,6 +494,17 @@ local function spawnEnemyModel(enemyData: any, startPos: Vector3): Model
 
 	model.PrimaryPart = root
 	model.Parent = workspace
+
+	-- Attach looping walking sound at low volume
+	local walkSound = Instance.new("Sound")
+	walkSound.Name = "WalkSound"
+	walkSound.SoundId = "rbxassetid://140596208736991"
+	walkSound.Volume = 0.15
+	walkSound.Looped = true
+	walkSound.RollOffMaxDistance = 40
+	walkSound.Parent = root
+	walkSound:Play()
+
 	return model
 end
 
@@ -675,6 +686,370 @@ function EnemyManager.applySlow(enemyId: string, factor: number, duration: numbe
 	enemy.slowFactor = math.min(enemy.slowFactor, factor)
 	enemy.slowTimer = math.max(enemy.slowTimer, duration)
 	enemy.speed = enemy.baseSpeed * enemy.slowFactor
+end
+
+-- Apply visual rune effect on enemy when hit
+-- runeIds: array of rune type IDs applied to the turret that hit this enemy
+function EnemyManager.applyRuneEffect(enemyId: string, runeIds: { number })
+	local enemy = activeEnemies[enemyId]
+	if not enemy or not enemy.model then return end
+	
+	local ResourceData = require(game.ReplicatedStorage.Shared.ResourceData)
+	local root = enemy.model.PrimaryPart
+	if not root then return end
+	
+	for _, runeId in ipairs(runeIds) do
+		local runeData = ResourceData.Resources[runeId]
+		if not runeData then continue end
+		
+		local color = runeData.color
+		local runeName = runeData.name
+		
+		task.spawn(function()
+			-- Create effect based on rune type
+			if runeName == "Ember" then
+				-- Fire effect: orange/red flames rising from enemy
+				for i = 1, 6 do
+					local flame = Instance.new("Part")
+					flame.Size = Vector3.new(0.4, 0.6, 0.4)
+					flame.Shape = Enum.PartType.Ball
+					flame.Material = Enum.Material.Neon
+					flame.Color = Color3.fromRGB(255, math.random(50, 150), 0)
+					flame.Anchored = true
+					flame.CanCollide = false
+					flame.Position = root.Position + Vector3.new(
+						(math.random() - 0.5) * 2,
+						math.random() * 1.5,
+						(math.random() - 0.5) * 2
+					)
+					flame.Parent = workspace
+					
+					task.spawn(function()
+						for k = 1, 12 do
+							task.wait(0.04)
+							local t = k / 12
+							flame.Position = flame.Position + Vector3.new(0, 0.15, 0)
+							flame.Size = flame.Size * 0.9
+							flame.Transparency = t
+						end
+						flame:Destroy()
+					end)
+					task.wait(0.05)
+				end
+				
+			elseif runeName == "Frost" then
+				-- Ice effect: blue crystals and frost particles
+				for i = 1, 5 do
+					local ice = Instance.new("Part")
+					ice.Size = Vector3.new(0.3, 0.5, 0.3)
+					ice.Material = Enum.Material.Glass
+					ice.Color = Color3.fromRGB(150, 220, 255)
+					ice.Anchored = true
+					ice.CanCollide = false
+					ice.Transparency = 0.3
+					local angle = (i / 5) * math.pi * 2
+					ice.Position = root.Position + Vector3.new(
+						math.cos(angle) * 1.2,
+						math.random() * 1.5,
+						math.sin(angle) * 1.2
+					)
+					ice.Parent = workspace
+					
+					task.spawn(function()
+						for k = 1, 15 do
+							task.wait(0.05)
+							ice.Transparency = 0.3 + (k / 15) * 0.7
+						end
+						ice:Destroy()
+					end)
+				end
+				
+			elseif runeName == "Spark" then
+				-- Lightning effect: yellow electric bolts
+				for i = 1, 4 do
+					local bolt = Instance.new("Part")
+					bolt.Size = Vector3.new(0.1, 0.1, 2)
+					bolt.Material = Enum.Material.Neon
+					bolt.Color = Color3.fromRGB(255, 255, 50)
+					bolt.Anchored = true
+					bolt.CanCollide = false
+					local startPos = root.Position + Vector3.new(
+						(math.random() - 0.5) * 2,
+						2,
+						(math.random() - 0.5) * 2
+					)
+					local endPos = root.Position + Vector3.new(
+						(math.random() - 0.5) * 2,
+						-0.5,
+						(math.random() - 0.5) * 2
+					)
+					bolt.CFrame = CFrame.lookAt(startPos, endPos)
+					bolt.Parent = workspace
+					
+					task.spawn(function()
+						for k = 1, 6 do
+							task.wait(0.03)
+							bolt.Transparency = k / 6
+							bolt.Color = Color3.fromRGB(255, 255, math.random(100, 255))
+						end
+						bolt:Destroy()
+					end)
+					task.wait(0.02)
+				end
+				
+			elseif runeName == "Spore" then
+				-- Nature effect: green spores floating up
+				for i = 1, 8 do
+					local spore = Instance.new("Part")
+					spore.Size = Vector3.new(0.25, 0.25, 0.25)
+					spore.Shape = Enum.PartType.Ball
+					spore.Material = Enum.Material.Neon
+					spore.Color = Color3.fromRGB(50, 255, 50)
+					spore.Anchored = true
+					spore.CanCollide = false
+					spore.Position = root.Position + Vector3.new(
+						(math.random() - 0.5) * 2,
+						math.random() * 2,
+						(math.random() - 0.5) * 2
+					)
+					spore.Parent = workspace
+					
+					task.spawn(function()
+						local drift = Vector3.new((math.random() - 0.5) * 0.1, 0.1, (math.random() - 0.5) * 0.1)
+						for k = 1, 15 do
+							task.wait(0.04)
+							spore.Position = spore.Position + drift
+							spore.Transparency = k / 15
+						end
+						spore:Destroy()
+					end)
+					task.wait(0.03)
+				end
+				
+			elseif runeName == "Shadow" then
+				-- Dark effect: purple/black wisps
+				for i = 1, 5 do
+					local wisp = Instance.new("Part")
+					wisp.Size = Vector3.new(0.5, 0.5, 0.5)
+					wisp.Shape = Enum.PartType.Ball
+					wisp.Material = Enum.Material.Neon
+					wisp.Color = Color3.fromRGB(80, 0, 120)
+					wisp.Anchored = true
+					wisp.CanCollide = false
+					wisp.Position = root.Position + Vector3.new(
+						(math.random() - 0.5) * 1.5,
+						math.random() * 1.5,
+						(math.random() - 0.5) * 1.5
+					)
+					wisp.Parent = workspace
+					
+					task.spawn(function()
+						for k = 1, 12 do
+							task.wait(0.04)
+							wisp.Position = wisp.Position + Vector3.new(
+								(math.random() - 0.5) * 0.2,
+								-0.05,
+								(math.random() - 0.5) * 0.2
+							)
+							wisp.Size = wisp.Size * 1.05
+							wisp.Transparency = k / 12
+						end
+						wisp:Destroy()
+					end)
+					task.wait(0.04)
+				end
+				
+			elseif runeName == "Radiance" then
+				-- Light effect: golden rays and sparkles
+				for i = 1, 6 do
+					local ray = Instance.new("Part")
+					ray.Size = Vector3.new(0.15, 2, 0.15)
+					ray.Material = Enum.Material.Neon
+					ray.Color = Color3.fromRGB(255, 255, 150)
+					ray.Anchored = true
+					ray.CanCollide = false
+					local angle = (i / 6) * math.pi * 2
+					ray.CFrame = CFrame.new(root.Position + Vector3.new(math.cos(angle) * 0.8, 1, math.sin(angle) * 0.8))
+						* CFrame.Angles(0, 0, math.rad(math.random(-15, 15)))
+					ray.Parent = workspace
+					
+					task.spawn(function()
+						for k = 1, 10 do
+							task.wait(0.04)
+							ray.Transparency = k / 10
+							ray.Size = ray.Size + Vector3.new(0, 0.1, 0)
+						end
+						ray:Destroy()
+					end)
+				end
+				
+			elseif runeName == "Stone" then
+				-- Earth effect: brown rocks flying out
+				for i = 1, 5 do
+					local rock = Instance.new("Part")
+					rock.Size = Vector3.new(0.4, 0.4, 0.4)
+					rock.Material = Enum.Material.Slate
+					rock.Color = Color3.fromRGB(120, 90, 60)
+					rock.Anchored = true
+					rock.CanCollide = false
+					rock.Position = root.Position + Vector3.new(0, 0.5, 0)
+					rock.Parent = workspace
+					
+					local dir = Vector3.new(
+						(math.random() - 0.5) * 2,
+						math.random() * 0.5 + 0.3,
+						(math.random() - 0.5) * 2
+					).Unit
+					
+					task.spawn(function()
+						for k = 1, 10 do
+							task.wait(0.04)
+							rock.Position = rock.Position + dir * 0.3
+							rock.CFrame = rock.CFrame * CFrame.Angles(0.2, 0.1, 0.15)
+							rock.Transparency = k / 10
+						end
+						rock:Destroy()
+					end)
+					task.wait(0.02)
+				end
+				
+			elseif runeName == "Gale" then
+				-- Wind effect: swirling white/blue particles
+				for i = 1, 8 do
+					local wind = Instance.new("Part")
+					wind.Size = Vector3.new(0.2, 0.2, 0.6)
+					wind.Material = Enum.Material.Neon
+					wind.Color = Color3.fromRGB(200, 240, 255)
+					wind.Anchored = true
+					wind.CanCollide = false
+					wind.Transparency = 0.3
+					local angle = (i / 8) * math.pi * 2
+					wind.Position = root.Position + Vector3.new(math.cos(angle) * 1.5, 1, math.sin(angle) * 1.5)
+					wind.Parent = workspace
+					
+					task.spawn(function()
+						for k = 1, 12 do
+							task.wait(0.03)
+							local newAngle = angle + k * 0.5
+							wind.Position = root.Position + Vector3.new(
+								math.cos(newAngle) * (1.5 - k * 0.1),
+								1 + k * 0.1,
+								math.sin(newAngle) * (1.5 - k * 0.1)
+							)
+							wind.Transparency = 0.3 + (k / 12) * 0.7
+						end
+						wind:Destroy()
+					end)
+				end
+				
+			elseif runeName == "Arcane" then
+				-- Magic effect: purple runes and symbols
+				for i = 1, 4 do
+					local rune = Instance.new("Part")
+					rune.Size = Vector3.new(1, 0.1, 1)
+					rune.Material = Enum.Material.Neon
+					rune.Color = Color3.fromRGB(180, 80, 255)
+					rune.Anchored = true
+					rune.CanCollide = false
+					rune.Transparency = 0.2
+					local height = i * 0.6
+					rune.CFrame = CFrame.new(root.Position + Vector3.new(0, height, 0))
+					rune.Parent = workspace
+					
+					task.spawn(function()
+						for k = 1, 15 do
+							task.wait(0.04)
+							rune.CFrame = rune.CFrame * CFrame.Angles(0, 0.3, 0)
+							rune.Size = rune.Size * 0.95
+							rune.Transparency = 0.2 + (k / 15) * 0.8
+						end
+						rune:Destroy()
+					end)
+					task.wait(0.1)
+				end
+				
+			elseif runeName == "Void" then
+				-- Void effect: black hole with particles being sucked in
+				local voidCore = Instance.new("Part")
+				voidCore.Size = Vector3.new(1.5, 1.5, 1.5)
+				voidCore.Shape = Enum.PartType.Ball
+				voidCore.Material = Enum.Material.Neon
+				voidCore.Color = Color3.fromRGB(10, 0, 20)
+				voidCore.Anchored = true
+				voidCore.CanCollide = false
+				voidCore.Position = root.Position + Vector3.new(0, 1, 0)
+				voidCore.Parent = workspace
+				
+				-- Spawn particles that get sucked into the void
+				for i = 1, 10 do
+					task.spawn(function()
+						local particle = Instance.new("Part")
+						particle.Size = Vector3.new(0.3, 0.3, 0.3)
+						particle.Shape = Enum.PartType.Ball
+						particle.Material = Enum.Material.Neon
+						particle.Color = Color3.fromRGB(math.random(50, 150), 0, math.random(100, 200))
+						particle.Anchored = true
+						particle.CanCollide = false
+						local angle = math.random() * math.pi * 2
+						local dist = 2 + math.random() * 1.5
+						particle.Position = voidCore.Position + Vector3.new(
+							math.cos(angle) * dist,
+							(math.random() - 0.5) * 2,
+							math.sin(angle) * dist
+						)
+						particle.Parent = workspace
+						
+						for k = 1, 12 do
+							task.wait(0.03)
+							local toCenter = (voidCore.Position - particle.Position).Unit
+							particle.Position = particle.Position + toCenter * 0.3
+							particle.Size = particle.Size * 0.9
+							particle.Transparency = k / 12
+						end
+						particle:Destroy()
+					end)
+					task.wait(0.05)
+				end
+				
+				-- Shrink and fade the void core
+				task.spawn(function()
+					for k = 1, 15 do
+						task.wait(0.05)
+						voidCore.Size = voidCore.Size * 0.9
+						voidCore.Transparency = k / 15
+					end
+					voidCore:Destroy()
+				end)
+			else
+				-- Generic colored effect for any other rune
+				for i = 1, 5 do
+					local particle = Instance.new("Part")
+					particle.Size = Vector3.new(0.4, 0.4, 0.4)
+					particle.Shape = Enum.PartType.Ball
+					particle.Material = Enum.Material.Neon
+					particle.Color = color
+					particle.Anchored = true
+					particle.CanCollide = false
+					particle.Position = root.Position + Vector3.new(
+						(math.random() - 0.5) * 2,
+						math.random() * 2,
+						(math.random() - 0.5) * 2
+					)
+					particle.Parent = workspace
+					
+					task.spawn(function()
+						for k = 1, 10 do
+							task.wait(0.04)
+							particle.Position = particle.Position + Vector3.new(0, 0.1, 0)
+							particle.Transparency = k / 10
+						end
+						particle:Destroy()
+					end)
+					task.wait(0.03)
+				end
+			end
+		end)
+	end
 end
 
 return EnemyManager

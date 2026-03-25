@@ -169,9 +169,15 @@ end
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local function createMockTurretManager(economyManager: any, lobbyManager: any)
+	local PLAYER_COLORS: { Color3 } = {
+		Color3.fromRGB(50, 130, 255),
+		Color3.fromRGB(255, 80, 80),
+	}
+
 	local tm = {}
 	tm.turrets = {} :: { [string]: any }
 	tm.turretIdCounter = 0
+	tm.playerColors = {} :: { [number]: Color3 }
 
 	local function newTurretId(): string
 		tm.turretIdCounter += 1
@@ -285,8 +291,35 @@ local function createMockTurretManager(economyManager: any, lobbyManager: any)
 		return true, nil
 	end
 
+	function tm.assignPlayerColors(players: { any })
+		tm.playerColors = {}
+		for i, player in ipairs(players) do
+			if i > #PLAYER_COLORS then break end
+			tm.playerColors[player.UserId] = PLAYER_COLORS[i]
+		end
+	end
+
+	function tm.getPlayerColor(userId: number): Color3?
+		return tm.playerColors[userId]
+	end
+
+	function tm.applyOwnerColor(mockModel: any, ownerColor: Color3, ownerName: string)
+		-- Set body color if body exists
+		if mockModel.Body then
+			mockModel.Body.Color = ownerColor
+		end
+		-- Set OwnerColor attribute
+		mockModel.OwnerColor = ownerColor
+		-- Add OwnerLabel
+		mockModel.OwnerLabel = {
+			Text = ownerName,
+			TextColor3 = ownerColor,
+		}
+	end
+
 	function tm.clearAll()
 		tm.turrets = {}
+		tm.playerColors = {}
 	end
 
 	function tm.getTurrets(): { [string]: any }
@@ -404,6 +437,28 @@ function TurretTestHarness.new()
 	-- Helper: add a mock enemy at a position
 	function self.addMockEnemy(position: Vector3, health: number?): string
 		return self.enemyManager.addEnemy(position, health)
+	end
+
+	-- Helper: build a mock turret model table (no Roblox Instances)
+	function self.buildMockModel(turretTypeId: number)
+		local turretType = TurretData.getTurretById(turretTypeId)
+		return {
+			Name = turretType and turretType.name or "Unknown",
+			Body = { Color = Color3.fromRGB(60, 140, 200) },
+			OwnerColor = nil,
+			OwnerLabel = nil,
+			TurretLevel = 1,
+			TurretTypeId = turretTypeId,
+		}
+	end
+
+	-- Helper: store a client-side color map from server-format {[userId]: {R, G, B}} to {[userId]: Color3}
+	function self.storeClientColorMap(colorMap: { [number]: { R: number, G: number, B: number } }): { [number]: Color3 }
+		local result = {}
+		for userId, components in pairs(colorMap) do
+			result[userId] = Color3.new(components.R, components.G, components.B)
+		end
+		return result
 	end
 
 	return self

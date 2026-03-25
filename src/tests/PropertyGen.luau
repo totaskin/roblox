@@ -164,4 +164,93 @@ function PropertyGen.runeInventory(): { [number]: number }
 	return inv
 end
 
+--- Return a random Color3 for player color testing.
+function PropertyGen.playerColor(): Color3
+	return Color3.fromRGB(rng:NextInteger(0, 255), rng:NextInteger(0, 255), rng:NextInteger(0, 255))
+end
+
+--- Return a random player display name string.
+function PropertyGen.playerDisplayName(): string
+	local names = { "Alex", "Jordan", "Sam", "Taylor", "Morgan", "Casey", "Riley", "Quinn", "Avery", "Dakota" }
+	return names[rng:NextInteger(1, #names)] .. "_" .. rng:NextInteger(1, 9999)
+end
+
+-- Map-specific generators
+
+--- Return a random map name from the available maps.
+function PropertyGen.mapName(): string
+	local maps = { "Map1", "Map2", "Map3" }
+	return maps[rng:NextInteger(1, #maps)]
+end
+
+--- Return a random pad index in [1, 3].
+function PropertyGen.padIndex(): number
+	return rng:NextInteger(1, 3)
+end
+
+-- Purchase-specific generators
+
+-- Base ID for placeholder product IDs (must match RunePurchaseManager)
+local PLACEHOLDER_BASE_ID = 1000000000
+
+--- Return a random product ID (valid or invalid).
+--- Valid IDs: PLACEHOLDER_BASE_ID + 1 through 10 (single runes) and PLACEHOLDER_BASE_ID + 100 (bundle)
+--- Invalid IDs: random numbers outside the valid range
+function PropertyGen.productId(): number
+	-- 70% chance of valid product ID, 30% chance of invalid
+	if rng:NextNumber() < 0.7 then
+		-- Valid product ID
+		if rng:NextNumber() < 0.9 then
+			-- Single rune product (1-10)
+			return PLACEHOLDER_BASE_ID + rng:NextInteger(1, 10)
+		else
+			-- Bundle product
+			return PLACEHOLDER_BASE_ID + 100
+		end
+	else
+		-- Invalid product ID - generate something outside valid range
+		local invalidType = rng:NextInteger(1, 4)
+		if invalidType == 1 then
+			-- Completely random small number
+			return rng:NextInteger(1, 999999)
+		elseif invalidType == 2 then
+			-- Base ID without offset
+			return PLACEHOLDER_BASE_ID
+		elseif invalidType == 3 then
+			-- Base ID with invalid offset (11-99)
+			return PLACEHOLDER_BASE_ID + rng:NextInteger(11, 99)
+		else
+			-- Base ID with invalid offset (101+)
+			return PLACEHOLDER_BASE_ID + rng:NextInteger(101, 999)
+		end
+	end
+end
+
+--- Return a random unique purchase ID string.
+--- Format: "purchase_" followed by random alphanumeric characters (mimics Roblox format)
+function PropertyGen.purchaseId(): string
+	local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+	local length = rng:NextInteger(16, 24)
+	local result = "purchase_"
+	for _ = 1, length do
+		local idx = rng:NextInteger(1, #chars)
+		result = result .. string.sub(chars, idx, idx)
+	end
+	return result
+end
+
+--- Return a mock purchase receipt structure matching Roblox's format.
+--- @param playerId number The player's UserId
+--- @param productId number The Developer Product ID
+--- @return table Mock receipt structure
+function PropertyGen.purchaseReceipt(playerId: number, productId: number): any
+	return {
+		PlayerId = playerId,
+		ProductId = productId,
+		PurchaseId = PropertyGen.purchaseId(),
+		CurrencySpent = 0,
+		CurrencyType = Enum.CurrencyType.Robux,
+	}
+end
+
 return PropertyGen

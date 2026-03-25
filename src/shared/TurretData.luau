@@ -19,6 +19,7 @@ export type TurretType = {
 	supportType: string?, -- nil = combat, "money" = coin gen, "health" = base heal
 	supportValue: number?, -- coins per tick or HP per tick
 	supportInterval: number?, -- seconds between ticks
+	shootSound: string?, -- optional per-turret shooting sound asset id
 }
 
 local Turrets: { TurretType } = {
@@ -32,6 +33,7 @@ local Turrets: { TurretType } = {
 		shopPrice = 0,
 		placementCost = 50,
 		upgradeMultipliers = { damage = 1.2, range = 1.05, fireRate = 1.05 },
+		shootSound = "rbxassetid://136353799660868",
 	},
 	{
 		id = 2,
@@ -43,17 +45,19 @@ local Turrets: { TurretType } = {
 		shopPrice = 1000,
 		placementCost = 100,
 		upgradeMultipliers = { damage = 1.35, range = 1.1, fireRate = 1.1 },
+		shootSound = "rbxassetid://138353739506455",
 	},
 	{
 		id = 3,
 		name = "Rapid Turret",
 		description = "Fast-firing turret that overwhelms enemies with volume.",
 		damage = 6,        -- 6 × 6.0 = 36 DPS, short range shredder
-		range = 14,
+		range = 20,
 		fireRate = 6.0,
 		shopPrice = 10000,
 		placementCost = 80,
 		upgradeMultipliers = { damage = 1.25, range = 1.05, fireRate = 1.2 },
+		shootSound = "rbxassetid://136133862513821",
 	},
 	{
 		id = 4,
@@ -65,6 +69,7 @@ local Turrets: { TurretType } = {
 		shopPrice = 100000,
 		placementCost = 150,
 		upgradeMultipliers = { damage = 1.4, range = 1.1, fireRate = 1.05 },
+		shootSound = "rbxassetid://121886939787314",
 	},
 	{
 		id = 5,
@@ -76,6 +81,7 @@ local Turrets: { TurretType } = {
 		shopPrice = 1000000,
 		placementCost = 120,
 		upgradeMultipliers = { damage = 1.3, range = 1.15, fireRate = 1.15 },
+		shootSound = "rbxassetid://128215352803496",
 	},
 	{
 		id = 6,
@@ -87,6 +93,7 @@ local Turrets: { TurretType } = {
 		shopPrice = 10000000,
 		placementCost = 200,
 		upgradeMultipliers = { damage = 1.35, range = 1.1, fireRate = 1.15 },
+		shootSound = "rbxassetid://336717461",
 	},
 	{
 		id = 7,

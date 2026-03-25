@@ -31,7 +31,7 @@ local State = {
 -- createInstance: encapsulates all per-game state and logic.
 -- Each call returns an isolated instance table.
 -- ---------------------------------------------------------------------------
-local function createInstance(players: { Player }?, areaId: number?, loadouts: { [number]: { number } }?)
+local function createInstance(players: { Player }?, areaId: number?, loadouts: { [number]: { number } }?, mapName: string?)
 	-- Set player loadouts for turret system
 	if loadouts then
 		TurretManager.setPlayerLoadouts(loadouts)
@@ -41,8 +41,10 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 	local self = {
 		players              = players,
 		areaId               = areaId,
+		mapName              = mapName or "Map1",
 		currentState         = State.LOBBY,
 		currentRound         = 0,
+		bossKillCount        = 0,
 		baseHealth           = 20,
 		spawnQueue           = {} :: { { enemyType: string, count: number, interval: number } },
 		spawnIndex           = 1,
@@ -144,6 +146,8 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 
 	local function onEnemyKilled(enemyData: any)
 		if self.currentState == State.GAME_OVER then return end
+		
+		print("[GameManager] Enemy killed:", enemyData.name, "| isBoss:", enemyData.isBoss, "| type:", enemyData.type)
 
 		for _, userId in ipairs(getPlayerUserIds()) do
 			local mult = GamepassManager.getCoinMultiplier(userId)
@@ -161,13 +165,31 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 		end
 
 		if enemyData.isBoss then
-			local resourceId = ResourceManager.awardBossDrop(getPlayerUserIds(), self.currentRound)
+			self.bossKillCount += 1
+			local resourceId = ResourceManager.awardBossDrop(getPlayerUserIds(), self.bossKillCount)
 			broadcast("BossDrop", resourceId)
-			print("[GameManager] Boss killed! Dropped resource", resourceId)
+			print("[GameManager] Boss killed! Total boss kills:", self.bossKillCount, "Dropped resource", resourceId)
 
-			local runeTypeId = RuneManager.awardBossDrop(getPlayerUserIds(), self.currentRound)
+			-- Play boss death sound
+			local sound = Instance.new("Sound")
+			sound.SoundId = "rbxassetid://109195879550742"
+			sound.Volume = 1
+			sound.RollOffMode = Enum.RollOffMode.InverseTapered
+			sound.RollOffMaxDistance = 10000
+			sound.Parent = workspace
+			sound:Play()
+			task.delay(10, function()
+				sound:Destroy()
+			end)
+
+			local runeTypeId = RuneManager.awardBossDrop(getPlayerUserIds(), self.bossKillCount)
+			print("[GameManager] Rune drop! Type:", runeTypeId, "Firing to players...")
+			local runeDropRemote = getRemote("RuneDrop")
+			print("[GameManager] RuneDrop remote:", runeDropRemote, "Name:", runeDropRemote.Name, "Parent:", runeDropRemote.Parent)
 			for _, p in ipairs(Players:GetPlayers()) do
+				print("[GameManager] Firing RuneDrop to", p.Name, "runeTypeId:", runeTypeId)
 				getRemote("RuneInventoryUpdate"):FireClient(p, RuneManager.getInventory(p.UserId))
+				runeDropRemote:FireClient(p, runeTypeId)
 			end
 		end
 
@@ -246,7 +268,7 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 			return
 		end
 
-		local _mapData = EnemyPath.getMap("Map1")
+		local _mapData = EnemyPath.getMap(self.mapName)
 		local worldPos = Vector3.new(worldX, 0, worldZ)
 		local success, result = TowerManager.placeTower(userId, gridX, gridZ, worldPos, resourceIds)
 
@@ -278,7 +300,8 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 		end
 
 		getRemote("PlaceTurretResult"):FireClient(player, true, result)
-		broadcast("TurretPlaced", turretTypeId, gridX, gridZ, worldX, worldZ, result)
+		local ownerColor = TurretManager.getPlayerColor(userId)
+		broadcast("TurretPlaced", turretTypeId, gridX, gridZ, worldX, worldZ, result, ownerColor)
 		-- Update session coins for the placing player
 		getRemote("SessionCoinsUpdate"):FireClient(player, EconomyManager.getSessionCoins(userId))
 	end
@@ -329,6 +352,20 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 
 		broadcast("WaveStarted", self.currentRound, waveConfig.isBossRound, self.enemiesAlive)
 		print("[GameManager] Wave", self.currentRound, "started |", self.enemiesAlive, "enemies | Boss:", waveConfig.isBossRound)
+
+		-- Play boss announcement sound for all players
+		if waveConfig.isBossRound then
+			local sound = Instance.new("Sound")
+			sound.SoundId = "rbxassetid://122982455902845"
+			sound.Volume = 1
+			sound.RollOffMode = Enum.RollOffMode.InverseTapered
+			sound.RollOffMaxDistance = 10000
+			sound.Parent = workspace
+			sound:Play()
+			task.delay(10, function()
+				sound:Destroy()
+			end)
+		end
 	end
 
 	function self.init()
@@ -342,13 +379,13 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 			"RequestInventory", "RequestState",
 			"LobbyState", "LobbyCountdown", "LobbyJoinResult", "LobbyReturnToLobby", "LobbyShowResults",
 			-- Turret system remotes
-			"PlaceTurret", "PlaceTurretResult", "TurretPlaced",
+			"PlaceTurret", "PlaceTurretResult", "TurretPlaced", "PlayerColorsAssigned",
 			"UpgradeTurret", "UpgradeTurretResult", "TurretUpgraded",
 			"SessionCoinsUpdate", "KillEarningsUpdate", "TurretGameOver",
 			-- Speed control
 			"SetGameSpeed", "GameSpeedChanged",
 			-- Rune system remotes
-			"ApplyRune", "ApplyRuneResult", "RuneInventoryUpdate", "TurretRunesUpdate",
+			"ApplyRune", "ApplyRuneResult", "RuneInventoryUpdate", "TurretRunesUpdate", "RuneDrop",
 		}
 		for _, name in ipairs(remoteNames) do
 			if not self.Remotes:FindFirstChild(name) then
@@ -361,7 +398,7 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 		EnemyManager.onKilled(onEnemyKilled)
 		EnemyManager.onReachedEnd(onEnemyReachedEnd)
 		EnemyManager.setMapOffset(Vector3.new(0, 0, -10000))
-		EnemyManager.setMap("Map1")
+		EnemyManager.setMap(self.mapName)
 
 		-- Support tower callbacks
 		TurretManager.onSupportMoney(function(ownerId, amount)
@@ -388,7 +425,9 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 			return RuneManager.getTurretRunes(turretInstanceId)
 		end)
 
-		MapBuilder.build("Map1", Vector3.new(0, 0, -10000))
+		-- Regenerate map path for variety each game
+		EnemyPath.regenerateMap(self.mapName)
+		MapBuilder.build(self.mapName, Vector3.new(0, 0, -10000), self.areaId)
 
 		Players.PlayerAdded:Connect(onPlayerAdded)
 		Players.PlayerRemoving:Connect(onPlayerRemoving)
@@ -404,6 +443,9 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 		self.Remotes.ApplyRune.OnServerEvent:Connect(function(player, turretInstanceId, runeTypeId)
 			if type(turretInstanceId) ~= "string" or type(runeTypeId) ~= "number" then return end
 			local success, reason = RuneManager.applyRune(player.UserId, turretInstanceId, runeTypeId)
+			if not success then
+				warn("[GameManager] ApplyRune failed for", player.Name, ":", reason)
+			end
 			getRemote("ApplyRuneResult"):FireClient(player, success, reason)
 			if success then
 				getRemote("RuneInventoryUpdate"):FireClient(player, RuneManager.getInventory(player.UserId))
@@ -438,6 +480,18 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 	-- ------------------------------------------------------------------
 
 	function self.start()
+		-- Play game start sound
+		local startSound = Instance.new("Sound")
+		startSound.SoundId = "rbxassetid://139685999877170"
+		startSound.Volume = 1
+		startSound.RollOffMode = Enum.RollOffMode.InverseTapered
+		startSound.RollOffMaxDistance = 10000
+		startSound.Parent = workspace
+		startSound:Play()
+		task.delay(10, function()
+			startSound:Destroy()
+		end)
+
 		-- Broadcast initial state to clients so HUD resets from any previous game
 		broadcast("BaseDamaged", self.baseHealth)
 		for _, p in ipairs(Players:GetPlayers()) do
@@ -445,6 +499,19 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 			getRemote("MoneyUpdate"):FireClient(p, EconomyManager.getMoney(uid))
 			getRemote("SessionCoinsUpdate"):FireClient(p, EconomyManager.getSessionCoins(uid))
 		end
+
+		-- Assign player colors and broadcast to all clients
+		local currentPlayers = Players:GetPlayers()
+		TurretManager.assignPlayerColors(currentPlayers)
+		local colorMap: { [number]: { R: number, G: number, B: number } } = {}
+		for _, p in ipairs(currentPlayers) do
+			local color = TurretManager.getPlayerColor(p.UserId)
+			if color then
+				colorMap[p.UserId] = { R = color.R, G = color.G, B = color.B }
+			end
+		end
+		broadcast("PlayerColorsAssigned", colorMap)
+
 		startIntermission()
 	end
 
@@ -456,6 +523,13 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 		EnemyManager.clearAll()
 		TurretManager.clearAll()
 		RuneManager.clearAll()
+
+		-- Destroy per-instance map visuals folder
+		local visuals = workspace:FindFirstChild("MapVisuals_" .. (self.areaId or 1))
+		if visuals then
+			visuals:Destroy()
+		end
+
 		self.currentState = State.LOBBY
 		self.currentRound = 0
 		self.enemiesAlive = 0
@@ -493,8 +567,8 @@ end
 -- GameManager.new: creates a scoped instance for a specific set of players
 -- and area. Does NOT auto-start — call instance.start() to begin.
 -- ---------------------------------------------------------------------------
-function GameManager.new(players: { Player }, areaId: number, loadouts: { [number]: { number } }?)
-	return createInstance(players, areaId, loadouts)
+function GameManager.new(players: { Player }, areaId: number, loadouts: { [number]: { number } }?, mapName: string?)
+	return createInstance(players, areaId, loadouts, mapName)
 end
 
 return GameManager

@@ -126,6 +126,35 @@ local function updatePreview(worldPos: Vector3)
 	end
 end
 
+-- Radius within which clicking will select the nearest slot
+local CLICK_RADIUS = 6
+
+-- Find the nearest unoccupied slot to a world position
+local function findNearestSlot(worldPos: Vector3): (string?, number?, number?, Vector3?)
+	local nearestKey: string? = nil
+	local nearestDist = math.huge
+	local nearestGx: number? = nil
+	local nearestGz: number? = nil
+	local nearestPos: Vector3? = nil
+	
+	for key, part in pairs(slotParts) do
+		if not occupiedSlots[key] then
+			local slotPos = part.Position
+			local dist = (Vector3.new(worldPos.X, 0, worldPos.Z) - Vector3.new(slotPos.X, 0, slotPos.Z)).Magnitude
+			if dist < nearestDist and dist <= CLICK_RADIUS then
+				nearestDist = dist
+				nearestKey = key
+				nearestPos = slotPos
+				local parts = key:split("_")
+				nearestGx = tonumber(parts[1])
+				nearestGz = tonumber(parts[2])
+			end
+		end
+	end
+	
+	return nearestKey, nearestGx, nearestGz, nearestPos
+end
+
 -- Raycast mouse to find hovered slot
 local function getHoveredSlot(): (string?, number?, number?, Vector3?)
 	local unitRay = camera:ScreenPointToRay(mouse.X, mouse.Y)
@@ -133,6 +162,8 @@ local function getHoveredSlot(): (string?, number?, number?, Vector3?)
 	if not result then return end
 
 	local hit = result.Instance
+	
+	-- Direct hit on a tower slot
 	if hit and hit.Name:sub(1, 10) == "TowerSlot_" then
 		local key = hit.Name:sub(11)
 		local parts = key:split("_")
@@ -140,6 +171,10 @@ local function getHoveredSlot(): (string?, number?, number?, Vector3?)
 		local gz = tonumber(parts[2])
 		return key, gx, gz, hit.Position
 	end
+	
+	-- Hit something else (ground, etc.) - find nearest slot within radius
+	local hitPos = result.Position
+	return findNearestSlot(hitPos)
 end
 
 -- Highlight hovered slot

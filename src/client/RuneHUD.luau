@@ -121,10 +121,10 @@ end
 local function buildInventoryBar(parent: ScreenGui): Frame
 	local bar = Instance.new("Frame")
 	bar.Name = "RuneInventoryBar"
-	bar.Size = UDim2.new(0, 860, 0, 60)
-	bar.Position = UDim2.new(1, -870, 1, -70)
+	bar.Size = UDim2.new(0, 44, 0, 380)
+	bar.Position = UDim2.new(1, -52, 0.5, -190)
 	bar.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
-	bar.BackgroundTransparency = 0.2
+	bar.BackgroundTransparency = 0.3
 	bar.BorderSizePixel = 0
 	bar.Parent = parent
 
@@ -133,15 +133,15 @@ local function buildInventoryBar(parent: ScreenGui): Frame
 	barCorner.Parent = bar
 
 	local layout = Instance.new("UIListLayout")
-	layout.FillDirection = Enum.FillDirection.Horizontal
-	layout.Padding = UDim.new(0, 4)
+	layout.FillDirection = Enum.FillDirection.Vertical
+	layout.Padding = UDim.new(0, 2)
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	layout.VerticalAlignment = Enum.VerticalAlignment.Center
 	layout.Parent = bar
 
 	local padding = Instance.new("UIPadding")
-	padding.PaddingLeft = UDim.new(0, 6)
-	padding.PaddingRight = UDim.new(0, 6)
+	padding.PaddingTop = UDim.new(0, 4)
+	padding.PaddingBottom = UDim.new(0, 4)
 	padding.Parent = bar
 
 	for i = 1, 10 do
@@ -149,7 +149,7 @@ local function buildInventoryBar(parent: ScreenGui): Frame
 
 		local slot = Instance.new("Frame")
 		slot.Name = "RuneSlot_" .. i
-		slot.Size = UDim2.new(0, 80, 0, 50)
+		slot.Size = UDim2.new(0, 36, 0, 36)
 		slot.BackgroundColor3 = res.color
 		slot.BackgroundTransparency = 0.2
 		slot.BorderSizePixel = 0
@@ -159,11 +159,13 @@ local function buildInventoryBar(parent: ScreenGui): Frame
 		corner.CornerRadius = UDim.new(0, 6)
 		corner.Parent = slot
 
+		-- Short 1-2 letter abbreviation instead of full name
+		local abbrev = string.sub(res.name, 1, 2)
 		local nameLabel = Instance.new("TextLabel")
 		nameLabel.Name = "NameLabel"
-		nameLabel.Size = UDim2.new(1, 0, 0.5, 0)
+		nameLabel.Size = UDim2.new(1, 0, 0.55, 0)
 		nameLabel.BackgroundTransparency = 1
-		nameLabel.Text = res.name
+		nameLabel.Text = abbrev
 		nameLabel.TextColor3 = Color3.new(1, 1, 1)
 		nameLabel.TextScaled = true
 		nameLabel.Font = Enum.Font.GothamBold
@@ -171,8 +173,8 @@ local function buildInventoryBar(parent: ScreenGui): Frame
 
 		local countLabel = Instance.new("TextLabel")
 		countLabel.Name = "CountLabel"
-		countLabel.Size = UDim2.new(1, 0, 0.5, 0)
-		countLabel.Position = UDim2.new(0, 0, 0.5, 0)
+		countLabel.Size = UDim2.new(1, 0, 0.4, 0)
+		countLabel.Position = UDim2.new(0, 0, 0.58, 0)
 		countLabel.BackgroundTransparency = 1
 		countLabel.Text = "x0"
 		countLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
@@ -183,6 +185,28 @@ local function buildInventoryBar(parent: ScreenGui): Frame
 		inventorySlots[i] = { frame = slot, countLabel = countLabel }
 	end
 
+	-- Task 8.3: Shop button below inventory bar (accessible during gameplay)
+	local shopBtn = Instance.new("TextButton")
+	shopBtn.Name = "RuneShopBtn"
+	shopBtn.Size = UDim2.new(0, 44, 0, 36)
+	shopBtn.Position = UDim2.new(1, -52, 0.5, 200)
+	shopBtn.BackgroundColor3 = Color3.fromRGB(80, 50, 160)
+	shopBtn.BorderSizePixel = 0
+	shopBtn.Text = "🔮"
+	shopBtn.TextColor3 = Color3.new(1, 1, 1)
+	shopBtn.TextScaled = true
+	shopBtn.Font = Enum.Font.GothamBold
+	shopBtn.Parent = parent
+
+	local shopBtnCorner = Instance.new("UICorner")
+	shopBtnCorner.CornerRadius = UDim.new(0, 8)
+	shopBtnCorner.Parent = shopBtn
+
+	shopBtn.MouseButton1Click:Connect(function()
+		local RuneShopUI = require(script.Parent.RuneShopUI)
+		RuneShopUI.show()
+	end)
+
 	return bar
 end
 
@@ -192,7 +216,7 @@ local function buildRunePanel(parent: ScreenGui): Frame
 	local panel = Instance.new("Frame")
 	panel.Name = "RunePanel"
 	panel.Size = UDim2.new(0, 260, 0, 480)
-	panel.Position = UDim2.new(1, -270, 0.5, -240)
+	panel.Position = UDim2.new(0, 10, 0.5, -240)
 	panel.BackgroundColor3 = Color3.fromRGB(15, 15, 30)
 	panel.BackgroundTransparency = 0.1
 	panel.BorderSizePixel = 0
@@ -316,7 +340,7 @@ local function buildRunePanel(parent: ScreenGui): Frame
 	closeBtn.Position = UDim2.new(1, -32, 0, 4)
 	closeBtn.BackgroundColor3 = Color3.fromRGB(160, 50, 50)
 	closeBtn.BorderSizePixel = 0
-	closeBtn.Text = "✕"
+	closeBtn.Text = "X"
 	closeBtn.TextColor3 = Color3.new(1, 1, 1)
 	closeBtn.TextScaled = true
 	closeBtn.Font = Enum.Font.GothamBold

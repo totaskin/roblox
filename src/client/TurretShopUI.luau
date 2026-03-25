@@ -80,7 +80,7 @@ local function buildShopUI(): ScreenGui
 	local container = Instance.new("Frame")
 	container.Name = "ShopContainer"
 	container.Size = UDim2.new(0, 300, 0, 450)
-	container.Position = UDim2.new(1, -310, 0.5, -225)
+	container.Position = UDim2.new(1, -310, 0, 112)
 	container.BackgroundColor3 = Color3.fromRGB(15, 15, 30)
 	container.BackgroundTransparency = 0.1
 	container.BorderSizePixel = 0
@@ -278,6 +278,7 @@ end
 
 function TurretShopUI.init()
 	local screen = buildShopUI()
+	screen.Enabled = false -- hidden by default, toggled via LoadoutSelector shop button
 	screen.Parent = playerGui
 	screenRef = screen
 

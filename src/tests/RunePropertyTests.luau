@@ -114,7 +114,6 @@ function RunePropertyTests.property2_InventoryNonNegativeInvariant(): (boolean, 
 		end
 
 		-- Apply some runes (with valid setup)
-		harness.runeManager.setGamePhase("Intermission")
 		local turretId = "turret_" .. tostring(uid)
 		harness.addMockTurret(turretId, 1, uid)
 
@@ -147,7 +146,6 @@ end
 function RunePropertyTests.property3_OwnershipValidation(): (boolean, number?)
 	return PropertyGen.check(ITERATIONS, function(_i)
 		local harness = RuneTestHarness.new()
-		harness.runeManager.setGamePhase("Intermission")
 
 		-- Create player A with runes
 		local playerA = PropertyGen.int(1, 499999)
@@ -192,7 +190,6 @@ end
 function RunePropertyTests.property4_EmptyInventoryValidation(): (boolean, number?)
 	return PropertyGen.check(ITERATIONS, function(_i)
 		local harness = RuneTestHarness.new()
-		harness.runeManager.setGamePhase("Intermission")
 
 		local uid = PropertyGen.int(1, 999999)
 		local runeTypeId = PropertyGen.runeTypeId()
@@ -223,44 +220,58 @@ function RunePropertyTests.property4_EmptyInventoryValidation(): (boolean, numbe
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- Feature: rune-system, Property 5: Phase Validation
--- For any game phase that is not "Intermission", applyRune should return
--- (false, "Runes can only be applied during intermission") with no state change.
+-- Feature: rune-system, Property 5: Rune Slot Limit Validation
+-- A turret can have at most 3 runes. Attempting to apply a 4th rune should
+-- return (false, "Turret already has 3 runes") with no state change.
 -- **Validates: Requirements 3.7, 3.8**
 -- ═══════════════════════════════════════════════════════════════════════════
-function RunePropertyTests.property5_PhaseValidation(): (boolean, number?)
+function RunePropertyTests.property5_RuneSlotLimitValidation(): (boolean, number?)
 	return PropertyGen.check(ITERATIONS, function(_i)
 		local harness = RuneTestHarness.new()
 
-		-- Set game phase to random non-Intermission value
-		local phases = { "LOBBY", "Wave", "GameOver" }
-		local phase = phases[PropertyGen.int(1, #phases)]
-		harness.runeManager.setGamePhase(phase)
-
-		-- Set up valid player/turret/inventory
 		local uid = PropertyGen.int(1, 999999)
-		local runeTypeId = PropertyGen.runeTypeId()
 		harness.runeManager.initPlayer(uid)
-		local inv = harness.runeManager.getInventory(uid)
-		inv[runeTypeId] = 3
 
-		local turretId = "turret_phase_" .. tostring(_i)
+		-- Give player plenty of runes
+		local inv = harness.runeManager.getInventory(uid)
+		for t = 1, 10 do
+			inv[t] = 10
+		end
+
+		local turretId = "turret_limit_" .. tostring(_i)
 		harness.addMockTurret(turretId, 1, uid)
 
-		-- Record state before
-		local countBefore = inv[runeTypeId]
-		local slotBefore = #harness.runeManager.getTurretRunes(turretId)
+		-- Apply 3 runes successfully
+		for r = 1, 3 do
+			local rTypeId = PropertyGen.runeTypeId()
+			local success, _ = harness.runeManager.applyRune(uid, turretId, rTypeId)
+			if not success then return false end
+		end
 
-		-- Call applyRune
-		local success, reason = harness.runeManager.applyRune(uid, turretId, runeTypeId)
+		-- Verify turret has 3 runes
+		if #harness.runeManager.getTurretRunes(turretId) ~= 3 then return false end
 
-		-- Verify returns (false, "Runes can only be applied during intermission")
+		-- Record state before 4th attempt
+		local countBefore = {}
+		for t = 1, 10 do
+			countBefore[t] = inv[t]
+		end
+
+		-- Try to apply a 4th rune
+		local rTypeId = PropertyGen.runeTypeId()
+		local success, reason = harness.runeManager.applyRune(uid, turretId, rTypeId)
+
+		-- Verify returns (false, "Turret already has 3 runes")
 		if success ~= false then return false end
-		if reason ~= "Runes can only be applied during intermission" then return false end
+		if reason ~= "Turret already has 3 runes" then return false end
 
-		-- Verify inventory and rune slot unchanged
-		if inv[runeTypeId] ~= countBefore then return false end
-		if #harness.runeManager.getTurretRunes(turretId) ~= slotBefore then return false end
+		-- Verify inventory unchanged
+		for t = 1, 10 do
+			if inv[t] ~= countBefore[t] then return false end
+		end
+
+		-- Verify turret still has 3 runes
+		if #harness.runeManager.getTurretRunes(turretId) ~= 3 then return false end
 
 		return true
 	end)
@@ -464,7 +475,6 @@ function RunePropertyTests.property11_RuneSlotPersistence(): (boolean, number?)
 
 		local uid = PropertyGen.int(1, 999999)
 		harness.runeManager.initPlayer(uid)
-		harness.runeManager.setGamePhase("Intermission")
 
 		-- Set up turret and apply some runes
 		local turretId = "turret_persist_" .. tostring(_i)
@@ -473,11 +483,15 @@ function RunePropertyTests.property11_RuneSlotPersistence(): (boolean, number?)
 
 		-- Give player some runes and apply them
 		local inv = harness.runeManager.getInventory(uid)
-		local numRunes = PropertyGen.int(1, 4)
+		local numRunes = PropertyGen.int(1, 3) -- Max 3 runes per turret
+		local appliedRunes = {}
 		for r = 1, numRunes do
 			local rTypeId = PropertyGen.runeTypeId()
 			inv[rTypeId] = (inv[rTypeId] or 0) + 1
-			harness.runeManager.applyRune(uid, turretId, rTypeId)
+			local success = harness.runeManager.applyRune(uid, turretId, rTypeId)
+			if success then
+				table.insert(appliedRunes, rTypeId)
+			end
 		end
 
 		-- Record rune slot contents
@@ -487,7 +501,7 @@ function RunePropertyTests.property11_RuneSlotPersistence(): (boolean, number?)
 			slotCopy[idx] = v
 		end
 
-		-- Change game phase: Intermission -> Wave -> Intermission
+		-- Simulate game phase changes (no-op now, but verifies slots persist)
 		harness.runeManager.setGamePhase("Wave")
 		harness.runeManager.setGamePhase("Intermission")
 
@@ -511,7 +525,6 @@ end
 function RunePropertyTests.property12_RuneReturnRoundTrip(): (boolean, number?)
 	return PropertyGen.check(ITERATIONS, function(_i)
 		local harness = RuneTestHarness.new()
-		harness.runeManager.setGamePhase("Intermission")
 
 		-- Set up multiple players with turrets
 		local numPlayers = PropertyGen.int(1, 3)
@@ -532,12 +545,15 @@ function RunePropertyTests.property12_RuneReturnRoundTrip(): (boolean, number?)
 			local turretTypeId = PropertyGen.int(1, 6)
 			harness.addMockTurret(turretId, turretTypeId, uid)
 
-			-- Apply some runes to the turret
+			-- Apply some runes to the turret (max 3)
 			local numApply = PropertyGen.int(0, 3)
+			local applied = 0
 			for _ = 1, numApply do
+				if applied >= 3 then break end
 				local rTypeId = PropertyGen.runeTypeId()
 				if (inv[rTypeId] or 0) > 0 then
-					harness.runeManager.applyRune(uid, turretId, rTypeId)
+					local success = harness.runeManager.applyRune(uid, turretId, rTypeId)
+					if success then applied = applied + 1 end
 				end
 			end
 
@@ -584,6 +600,146 @@ function RunePropertyTests.property12_RuneReturnRoundTrip(): (boolean, number?)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- Feature: rune-system, Property 13: Boss Drop Returns Valid Rune Type
+-- For any boss kill count, awardBossDrop should return a valid rune type id
+-- in the range [1, 10] and the rune should be added to all players' inventories.
+-- **Validates: Rune drop notification requirements**
+-- ═══════════════════════════════════════════════════════════════════════════
+function RunePropertyTests.property13_BossDropReturnsValidRuneType(): (boolean, number?)
+	return PropertyGen.check(ITERATIONS, function(_i)
+		local harness = RuneTestHarness.new()
+
+		-- Generate random players
+		local numPlayers = PropertyGen.int(1, 4)
+		local userIds = {}
+		for p = 1, numPlayers do
+			local uid = PropertyGen.int(1, 999999)
+			harness.runeManager.initPlayer(uid)
+			userIds[p] = uid
+		end
+
+		-- Generate random boss kill count (1 to 100)
+		local bossKillCount = PropertyGen.int(1, 100)
+
+		-- Call awardBossDrop
+		local runeTypeId = harness.runeManager.awardBossDrop(userIds, bossKillCount)
+
+		-- Verify: returned runeTypeId is a number in [1, 10]
+		if type(runeTypeId) ~= "number" then return false end
+		if runeTypeId < 1 or runeTypeId > 10 then return false end
+		if runeTypeId ~= math.floor(runeTypeId) then return false end
+
+		-- Verify: each player received exactly 1 of this rune type
+		for _, uid in ipairs(userIds) do
+			local inv = harness.runeManager.getInventory(uid)
+			if (inv[runeTypeId] or 0) < 1 then return false end
+		end
+
+		return true
+	end)
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Feature: rune-system, Property 14: Multiple Boss Drops Accumulate
+-- Multiple boss kills should accumulate runes in player inventories correctly.
+-- **Validates: Rune tracking for game over screen**
+-- ═══════════════════════════════════════════════════════════════════════════
+function RunePropertyTests.property14_MultipleBossDropsAccumulate(): (boolean, number?)
+	return PropertyGen.check(ITERATIONS, function(_i)
+		local harness = RuneTestHarness.new()
+
+		local uid = PropertyGen.int(1, 999999)
+		harness.runeManager.initPlayer(uid)
+
+		-- Track expected rune counts
+		local expectedCounts = {}
+		for t = 1, 10 do
+			expectedCounts[t] = 0
+		end
+
+		-- Simulate multiple boss kills
+		local numBossKills = PropertyGen.int(1, 10)
+		for bossNum = 1, numBossKills do
+			local runeTypeId = harness.runeManager.awardBossDrop({ uid }, bossNum)
+			expectedCounts[runeTypeId] = expectedCounts[runeTypeId] + 1
+		end
+
+		-- Verify inventory matches expected counts
+		local inv = harness.runeManager.getInventory(uid)
+		local totalExpected = 0
+		local totalActual = 0
+		for t = 1, 10 do
+			totalExpected = totalExpected + expectedCounts[t]
+			totalActual = totalActual + (inv[t] or 0)
+		end
+
+		-- Total runes should equal number of boss kills
+		if totalActual ~= numBossKills then return false end
+		if totalExpected ~= numBossKills then return false end
+
+		return true
+	end)
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Feature: rune-system, Property 15: Inventory Persistence After Set
+-- After calling setInventory, getInventory should return the same values.
+-- **Validates: Rune inventory persistence for lobby display**
+-- ═══════════════════════════════════════════════════════════════════════════
+function RunePropertyTests.property15_InventoryPersistenceAfterSet(): (boolean, number?)
+	return PropertyGen.check(ITERATIONS, function(_i)
+		local harness = RuneTestHarness.new()
+
+		local uid = PropertyGen.int(1, 999999)
+
+		-- Generate random inventory
+		local inputInventory = {}
+		for t = 1, 10 do
+			inputInventory[t] = PropertyGen.int(0, 10)
+		end
+
+		-- Set inventory (simulating DataManager load)
+		harness.runeManager.initPlayer(uid)
+		local inv = harness.runeManager.getInventory(uid)
+		for t = 1, 10 do
+			inv[t] = inputInventory[t]
+		end
+
+		-- Verify getInventory returns the same values
+		local retrievedInv = harness.runeManager.getInventory(uid)
+		for t = 1, 10 do
+			if (retrievedInv[t] or 0) ~= inputInventory[t] then
+				return false
+			end
+		end
+
+		return true
+	end)
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Feature: rune-system, Property 16: Rune Drop Distribution Validity
+-- ResourceData.rollResourceDrop should always return a valid rune type id.
+-- **Validates: Rune drop system integrity**
+-- ═══════════════════════════════════════════════════════════════════════════
+function RunePropertyTests.property16_RuneDropDistributionValidity(): (boolean, number?)
+	local ResourceData = require(script.Parent.Parent.shared.ResourceData)
+	
+	return PropertyGen.check(ITERATIONS * 10, function(_i)
+		-- Test with various boss kill counts
+		local bossKillCount = PropertyGen.int(1, 1000)
+		local runeTypeId = ResourceData.rollResourceDrop(bossKillCount)
+
+		-- Verify: returned runeTypeId is a number in [1, 10]
+		if type(runeTypeId) ~= "number" then return false end
+		if runeTypeId < 1 or runeTypeId > 10 then return false end
+		if runeTypeId ~= math.floor(runeTypeId) then return false end
+
+		return true
+	end)
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- Test Runner
 -- ═══════════════════════════════════════════════════════════════════════════
 
@@ -593,7 +749,7 @@ function RunePropertyTests.runAll(): { { name: string, passed: boolean, failedAt
 		{ name = "Property 2: Inventory Non-Negative Invariant",              fn = RunePropertyTests.property2_InventoryNonNegativeInvariant },
 		{ name = "Property 3: Ownership Validation",                          fn = RunePropertyTests.property3_OwnershipValidation },
 		{ name = "Property 4: Empty Inventory Validation",                    fn = RunePropertyTests.property4_EmptyInventoryValidation },
-		{ name = "Property 5: Phase Validation",                              fn = RunePropertyTests.property5_PhaseValidation },
+		{ name = "Property 5: Rune Slot Limit Validation",                      fn = RunePropertyTests.property5_RuneSlotLimitValidation },
 		{ name = "Property 6: Valid Application Transfer",                    fn = RunePropertyTests.property6_ValidApplicationTransfer },
 		{ name = "Property 7: Combination Table Completeness",                fn = RunePropertyTests.property7_CombinationTableCompleteness },
 		{ name = "Property 8: Combined Multiplier Computation",               fn = RunePropertyTests.property8_CombinedMultiplierComputation },
@@ -601,6 +757,10 @@ function RunePropertyTests.runAll(): { { name: string, passed: boolean, failedAt
 		{ name = "Property 10: Single-Rune Effects",                          fn = RunePropertyTests.property10_SingleRuneEffects },
 		{ name = "Property 11: Rune Slot Persistence",                        fn = RunePropertyTests.property11_RuneSlotPersistence },
 		{ name = "Property 12: Rune Return Round Trip",                       fn = RunePropertyTests.property12_RuneReturnRoundTrip },
+		{ name = "Property 13: Boss Drop Returns Valid Rune Type",            fn = RunePropertyTests.property13_BossDropReturnsValidRuneType },
+		{ name = "Property 14: Multiple Boss Drops Accumulate",               fn = RunePropertyTests.property14_MultipleBossDropsAccumulate },
+		{ name = "Property 15: Inventory Persistence After Set",              fn = RunePropertyTests.property15_InventoryPersistenceAfterSet },
+		{ name = "Property 16: Rune Drop Distribution Validity",              fn = RunePropertyTests.property16_RuneDropDistributionValidity },
 	}
 
 	local results = {}

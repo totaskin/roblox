@@ -79,7 +79,7 @@ local topBar = makeFrame(screenGui, "TopBar",
 	UDim2.new(1, 0, 0, 50),
 	Color3.fromRGB(15, 15, 25), 0.15)
 
-local moneyLabel = makeLabel(topBar, "Money", "💰 150",
+local moneyLabel = makeLabel(topBar, "Money", "💰 0",
 	UDim2.new(0, 10, 0, 5), UDim2.new(0, 160, 0, 40),
 	14, Color3.fromRGB(255, 220, 50))
 

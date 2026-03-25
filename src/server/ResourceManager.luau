@@ -30,8 +30,8 @@ function ResourceManager.addResource(userId: number, resourceId: number, amount:
 end
 
 -- Called when a boss dies — awards one resource to all players in the session
-function ResourceManager.awardBossDrop(userIds: { number }, round: number)
-	local resourceId = ResourceData.rollResourceDrop(round)
+function ResourceManager.awardBossDrop(userIds: { number }, bossKillCount: number)
+	local resourceId = ResourceData.rollResourceDrop(bossKillCount)
 	for _, userId in ipairs(userIds) do
 		ResourceManager.addResource(userId, resourceId, 1)
 	end

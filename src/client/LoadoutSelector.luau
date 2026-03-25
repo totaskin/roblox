@@ -1,6 +1,6 @@
 -- LoadoutSelector.luau
--- Lobby loadout picker UI: select 1-3 turrets from unlocked set before entering a game.
--- Fires SetLoadout remote when loadout changes, listens to SetLoadoutResult and ShopUpdate.
+-- Combined lobby UI: centered loadout slots + turret picker overlay + shop toggle button.
+-- Click a loadout slot to open a picker of unlocked turrets. Loadout is saved to server.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -14,79 +14,25 @@ local LoadoutSelector = {}
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-local unlocks: { [number]: boolean } = { [1] = true } -- Scout unlocked by default
-local loadout: { number } = {} -- up to 3 turret ids
+local unlocks: { [number]: boolean } = { [1] = true }
+local loadout: { number } = {}
+local persistentCoins: number = 0
+
+-- Which slot (1-3) is currently being edited, nil = picker closed
+local editingSlot: number? = nil
 
 -- UI references
-local slotFrames: { Frame } = {}
-local slotLabels: { TextLabel } = {}
-local tileButtons: { [number]: TextButton } = {}
-local tileHighlights: { [number]: Frame } = {}
+local screenRef: ScreenGui = nil
+local slotButtons: { TextButton } = {}
+local pickerFrame: Frame = nil
+local pickerTiles: { [number]: Frame } = {}
 local statusLabel: TextLabel = nil
-local blockingOverlay: Frame = nil
+local shopButtonRef: TextButton = nil
+
+-- Reference to TurretShopUI for toggling
+local TurretShopUI = nil
 
 -- ── Helpers ──────────────────────────────────────────────────────────────────
-
-local function isInLoadout(turretId: number): boolean
-	for _, id in loadout do
-		if id == turretId then return true end
-	end
-	return false
-end
-
-local function removeFromLoadout(turretId: number)
-	for i, id in loadout do
-		if id == turretId then
-			table.remove(loadout, i)
-			return
-		end
-	end
-end
-
-local function refreshSlots()
-	for i = 1, 3 do
-		local label = slotLabels[i]
-		local frame = slotFrames[i]
-		if not label or not frame then continue end
-
-		local turretId = loadout[i]
-		if turretId then
-			local turret = TurretData.getTurretById(turretId)
-			label.Text = turret and turret.name or ("ID " .. turretId)
-			frame.BackgroundColor3 = Color3.fromRGB(40, 120, 60)
-		else
-			label.Text = "Empty"
-			frame.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
-		end
-	end
-end
-
-local function refreshTileHighlights()
-	for turretId, highlight in tileHighlights do
-		highlight.Visible = isInLoadout(turretId)
-	end
-end
-
-local function refreshStatus()
-	if not statusLabel then return end
-	local count = #loadout
-	if count == 0 then
-		statusLabel.Text = "Select at least 1 turret"
-		statusLabel.TextColor3 = Color3.fromRGB(255, 180, 80)
-	elseif count < 3 then
-		statusLabel.Text = count .. "/3 selected — ready!"
-		statusLabel.TextColor3 = Color3.fromRGB(80, 220, 80)
-	else
-		statusLabel.Text = "Loadout full (3/3)"
-		statusLabel.TextColor3 = Color3.fromRGB(80, 220, 80)
-	end
-end
-
-local function refreshBlockingOverlay()
-	if not blockingOverlay then return end
-	-- Show warning only when no turrets selected at all
-	blockingOverlay.Visible = #loadout < 1
-end
 
 local function fireSetLoadout()
 	if #loadout < 1 then return end
@@ -100,41 +46,173 @@ local function fireSetLoadout()
 	end)
 end
 
-local function refreshAll()
-	refreshSlots()
-	refreshTileHighlights()
-	refreshStatus()
-	refreshBlockingOverlay()
+local function refreshSlots()
+	for i = 1, 3 do
+		local btn = slotButtons[i]
+		if not btn then continue end
+		local nameLabel = btn:FindFirstChild("SlotName")
+		local turretId = loadout[i]
+		if turretId then
+			local turret = TurretData.getTurretById(turretId)
+			if nameLabel then nameLabel.Text = turret and turret.name or ("ID " .. turretId) end
+			btn.BackgroundColor3 = Color3.fromRGB(40, 120, 60)
+		else
+			if nameLabel then nameLabel.Text = "+" end
+			btn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+		end
+		-- Highlight the slot being edited
+		local stroke = btn:FindFirstChildOfClass("UIStroke")
+		if stroke then
+			stroke.Enabled = (editingSlot == i)
+		end
+	end
 end
 
--- Auto-select the single turret when only 1 is unlocked
-local function tryAutoFill()
-	local unlockedIds = {}
-	for id, _ in unlocks do
-		table.insert(unlockedIds, id)
+local function refreshStatus()
+	if not statusLabel then return end
+	local count = #loadout
+	if count == 0 then
+		statusLabel.Text = "Tap a slot to add a turret"
+		statusLabel.TextColor3 = Color3.fromRGB(255, 180, 80)
+	else
+		statusLabel.Text = count .. "/3 selected"
+		statusLabel.TextColor3 = Color3.fromRGB(80, 220, 80)
+	end
+end
+
+local function closePicker()
+	editingSlot = nil
+	if pickerFrame then pickerFrame.Visible = false end
+	refreshSlots()
+end
+
+local function refreshPickerTiles()
+	if not pickerFrame then return end
+	for _, turret in TurretData.getAllTurrets() do
+		local tile = pickerTiles[turret.id]
+		if not tile then continue end
+		local isUnlocked = unlocks[turret.id] == true
+		-- Check if already in loadout (in a different slot)
+		local alreadyUsed = false
+		for slotIdx, id in loadout do
+			if id == turret.id and slotIdx ~= editingSlot then
+				alreadyUsed = true
+				break
+			end
+		end
+
+		local canAfford = persistentCoins >= turret.shopPrice
+
+		if isUnlocked and not alreadyUsed then
+			tile.BackgroundTransparency = 0.15
+			tile.BackgroundColor3 = Color3.fromRGB(35, 30, 55)
+		elseif isUnlocked and alreadyUsed then
+			tile.BackgroundTransparency = 0.65
+			tile.BackgroundColor3 = Color3.fromRGB(35, 30, 55)
+		elseif not isUnlocked and canAfford then
+			-- Locked but affordable: show with a green-ish tint
+			tile.BackgroundTransparency = 0.3
+			tile.BackgroundColor3 = Color3.fromRGB(30, 50, 35)
+		else
+			-- Locked and can't afford: greyed out
+			tile.BackgroundTransparency = 0.7
+			tile.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+		end
+
+		local lockedLbl = tile:FindFirstChild("LockedLabel")
+		if lockedLbl then
+			if not isUnlocked then
+				local priceText = canAfford and ("💰 " .. turret.shopPrice) or ("🔒 " .. turret.shopPrice)
+				lockedLbl.Text = priceText
+				lockedLbl.TextColor3 = canAfford and Color3.fromRGB(80, 220, 80) or Color3.fromRGB(150, 150, 150)
+				lockedLbl.Visible = true
+			else
+				lockedLbl.Visible = false
+			end
+		end
+		local usedLbl = tile:FindFirstChild("UsedLabel")
+		if usedLbl then
+			usedLbl.Visible = isUnlocked and alreadyUsed
+		end
+	end
+end
+
+local function openPicker(slotIndex: number)
+	editingSlot = slotIndex
+	refreshPickerTiles()
+	if pickerFrame then pickerFrame.Visible = true end
+	refreshSlots()
+end
+
+local function onPickerTurretSelected(turretId: number)
+	if not editingSlot then return end
+
+	-- If locked, try to buy it
+	if not unlocks[turretId] then
+		local turret = TurretData.getTurretById(turretId)
+		if not turret or persistentCoins < turret.shopPrice then return end
+		local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+		if Remotes then
+			local BuyTurret = Remotes:FindFirstChild("BuyTurret")
+			if BuyTurret then
+				BuyTurret:FireServer(turretId)
+			end
+		end
+		return -- wait for ShopUpdate to refresh unlocks
 	end
 
-	if #unlockedIds == 1 and #loadout == 0 then
-		loadout = { unlockedIds[1] }
-		refreshAll()
+	-- Check not already in another slot
+	for slotIdx, id in loadout do
+		if id == turretId and slotIdx ~= editingSlot then return end
+	end
+
+	-- Place into the editing slot
+	if editingSlot <= #loadout then
+		loadout[editingSlot] = turretId
+	else
+		-- Fill gaps if needed
+		while #loadout < editingSlot - 1 do
+			table.insert(loadout, 0)
+		end
+		if editingSlot <= #loadout then
+			loadout[editingSlot] = turretId
+		else
+			table.insert(loadout, turretId)
+		end
+	end
+
+	-- Remove any 0 placeholders
+	local cleaned = {}
+	for _, id in loadout do
+		if id ~= 0 then table.insert(cleaned, id) end
+	end
+	loadout = cleaned
+
+	closePicker()
+	refreshSlots()
+	refreshStatus()
+	fireSetLoadout()
+end
+
+local function onSlotClicked(slotIndex: number)
+	if editingSlot == slotIndex then
+		-- Clicking same slot closes picker
+		closePicker()
+		return
+	end
+	-- If slot has a turret, clicking it opens picker to replace; long-term could clear
+	openPicker(slotIndex)
+end
+
+local function onSlotRightClicked(slotIndex: number)
+	-- Right click / clear: remove turret from this slot
+	if slotIndex <= #loadout then
+		table.remove(loadout, slotIndex)
+		closePicker()
+		refreshSlots()
+		refreshStatus()
 		fireSetLoadout()
 	end
-end
-
-local function onTurretTileClicked(turretId: number)
-	if not unlocks[turretId] then return end
-
-	if isInLoadout(turretId) then
-		-- Deselect: remove from loadout
-		removeFromLoadout(turretId)
-	else
-		-- Select: add to next empty slot (max 3)
-		if #loadout >= 3 then return end
-		table.insert(loadout, turretId)
-	end
-
-	refreshAll()
-	fireSetLoadout()
 end
 
 -- ── Build UI ─────────────────────────────────────────────────────────────────
@@ -145,116 +223,210 @@ local function buildUI(): ScreenGui
 	screen.ResetOnSpawn = false
 	screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-	-- Main container (left side of screen)
-	local container = Instance.new("Frame")
-	container.Name = "LoadoutContainer"
-	container.Size = UDim2.new(0, 280, 0, 420)
-	container.Position = UDim2.new(0, 10, 0.5, -210)
-	container.BackgroundColor3 = Color3.fromRGB(15, 15, 30)
-	container.BackgroundTransparency = 0.1
-	container.BorderSizePixel = 0
-	container.Parent = screen
+	-- ── Shop toggle button (top-right corner) ────────────────────────────
+	shopButtonRef = Instance.new("TextButton")
+	shopButtonRef.Name = "ShopToggleBtn"
+	shopButtonRef.Size = UDim2.new(0, 150, 0, 44)
+	shopButtonRef.Position = UDim2.new(1, -160, 0, 56)
+	shopButtonRef.BackgroundColor3 = Color3.fromRGB(50, 30, 100)
+	shopButtonRef.BorderSizePixel = 0
+	shopButtonRef.Text = "Turrets"
+	shopButtonRef.TextColor3 = Color3.fromRGB(255, 220, 80)
+	shopButtonRef.TextScaled = true
+	shopButtonRef.Font = Enum.Font.GothamMedium
+	shopButtonRef.Parent = screen
 
-	local containerCorner = Instance.new("UICorner")
-	containerCorner.CornerRadius = UDim.new(0, 8)
-	containerCorner.Parent = container
+	local shopBtnCorner = Instance.new("UICorner")
+	shopBtnCorner.CornerRadius = UDim.new(0, 8)
+	shopBtnCorner.Parent = shopButtonRef
 
-	-- Header
-	local header = Instance.new("TextLabel")
-	header.Name = "Header"
-	header.Size = UDim2.new(1, 0, 0, 30)
-	header.BackgroundColor3 = Color3.fromRGB(30, 30, 60)
-	header.BackgroundTransparency = 0.2
-	header.BorderSizePixel = 0
-	header.Text = "Turret Loadout"
-	header.TextColor3 = Color3.fromRGB(255, 220, 80)
-	header.TextScaled = true
-	header.Font = Enum.Font.GothamBold
-	header.Parent = container
+	local shopBtnStroke = Instance.new("UIStroke")
+	shopBtnStroke.Color = Color3.fromRGB(255, 200, 50)
+	shopBtnStroke.Thickness = 2
+	shopBtnStroke.Parent = shopButtonRef
 
-	local headerCorner = Instance.new("UICorner")
-	headerCorner.CornerRadius = UDim.new(0, 8)
-	headerCorner.Parent = header
+	shopButtonRef.MouseButton1Click:Connect(function()
+		if not TurretShopUI then
+			TurretShopUI = require(script.Parent.TurretShopUI)
+		end
+		-- Toggle shop visibility
+		local shopGui = playerGui:FindFirstChild("TurretShopUI")
+		if shopGui then
+			shopGui.Enabled = not shopGui.Enabled
+		end
+	end)
 
-	-- 3 loadout slots at the top
+	-- ── Loadout bar (bottom center) ──────────────────────────────────────
+	local loadoutBar = Instance.new("Frame")
+	loadoutBar.Name = "LoadoutBar"
+	loadoutBar.Size = UDim2.new(0, 340, 0, 90)
+	loadoutBar.Position = UDim2.new(0.5, -170, 1, -100)
+	loadoutBar.BackgroundColor3 = Color3.fromRGB(15, 15, 30)
+	loadoutBar.BackgroundTransparency = 0.15
+	loadoutBar.BorderSizePixel = 0
+	loadoutBar.Parent = screen
+
+	local barCorner = Instance.new("UICorner")
+	barCorner.CornerRadius = UDim.new(0, 10)
+	barCorner.Parent = loadoutBar
+
+	-- Title
+	local titleLabel = Instance.new("TextLabel")
+	titleLabel.Name = "Title"
+	titleLabel.Size = UDim2.new(1, 0, 0, 18)
+	titleLabel.Position = UDim2.new(0, 0, 0, 2)
+	titleLabel.BackgroundTransparency = 1
+	titleLabel.Text = "Loadout"
+	titleLabel.TextColor3 = Color3.fromRGB(255, 220, 80)
+	titleLabel.TextScaled = true
+	titleLabel.Font = Enum.Font.GothamBold
+	titleLabel.Parent = loadoutBar
+
+	-- Slots row
 	local slotsRow = Instance.new("Frame")
 	slotsRow.Name = "SlotsRow"
-	slotsRow.Size = UDim2.new(1, -10, 0, 40)
-	slotsRow.Position = UDim2.new(0, 5, 0, 34)
+	slotsRow.Size = UDim2.new(1, -20, 0, 48)
+	slotsRow.Position = UDim2.new(0, 10, 0, 22)
 	slotsRow.BackgroundTransparency = 1
-	slotsRow.Parent = container
+	slotsRow.Parent = loadoutBar
 
 	local slotsLayout = Instance.new("UIListLayout")
 	slotsLayout.FillDirection = Enum.FillDirection.Horizontal
-	slotsLayout.Padding = UDim.new(0, 4)
+	slotsLayout.Padding = UDim.new(0, 8)
 	slotsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	slotsLayout.Parent = slotsRow
 
 	for i = 1, 3 do
-		local slotFrame = Instance.new("Frame")
-		slotFrame.Name = "Slot_" .. i
-		slotFrame.Size = UDim2.new(0, 85, 0, 36)
-		slotFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
-		slotFrame.BorderSizePixel = 0
-		slotFrame.Parent = slotsRow
+		local slotBtn = Instance.new("TextButton")
+		slotBtn.Name = "Slot_" .. i
+		slotBtn.Size = UDim2.new(0, 100, 0, 48)
+		slotBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+		slotBtn.BorderSizePixel = 0
+		slotBtn.Text = ""
+		slotBtn.AutoButtonColor = true
+		slotBtn.Parent = slotsRow
 
 		local slotCorner = Instance.new("UICorner")
-		slotCorner.CornerRadius = UDim.new(0, 4)
-		slotCorner.Parent = slotFrame
+		slotCorner.CornerRadius = UDim.new(0, 6)
+		slotCorner.Parent = slotBtn
 
-		local slotLabel = Instance.new("TextLabel")
-		slotLabel.Name = "SlotLabel"
-		slotLabel.Size = UDim2.new(1, -4, 1, -4)
-		slotLabel.Position = UDim2.new(0, 2, 0, 2)
-		slotLabel.BackgroundTransparency = 1
-		slotLabel.Text = "Empty"
-		slotLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-		slotLabel.TextScaled = true
-		slotLabel.Font = Enum.Font.Gotham
-		slotLabel.Parent = slotFrame
+		local slotStroke = Instance.new("UIStroke")
+		slotStroke.Color = Color3.fromRGB(255, 220, 80)
+		slotStroke.Thickness = 2
+		slotStroke.Enabled = false
+		slotStroke.Parent = slotBtn
 
-		slotFrames[i] = slotFrame
-		slotLabels[i] = slotLabel
+		local slotName = Instance.new("TextLabel")
+		slotName.Name = "SlotName"
+		slotName.Size = UDim2.new(1, -6, 1, -6)
+		slotName.Position = UDim2.new(0, 3, 0, 3)
+		slotName.BackgroundTransparency = 1
+		slotName.Text = "+"
+		slotName.TextColor3 = Color3.fromRGB(200, 200, 200)
+		slotName.TextScaled = true
+		slotName.Font = Enum.Font.GothamBold
+		slotName.Parent = slotBtn
+
+		slotButtons[i] = slotBtn
+
+		slotBtn.MouseButton1Click:Connect(function()
+			onSlotClicked(i)
+		end)
+		slotBtn.MouseButton2Click:Connect(function()
+			onSlotRightClicked(i)
+		end)
 	end
 
 	-- Status label
 	statusLabel = Instance.new("TextLabel")
-	statusLabel.Name = "StatusLabel"
-	statusLabel.Size = UDim2.new(1, -10, 0, 20)
-	statusLabel.Position = UDim2.new(0, 5, 0, 78)
+	statusLabel.Name = "Status"
+	statusLabel.Size = UDim2.new(1, 0, 0, 16)
+	statusLabel.Position = UDim2.new(0, 0, 1, -18)
 	statusLabel.BackgroundTransparency = 1
-	statusLabel.Text = "Select 3 turrets"
+	statusLabel.Text = "Tap a slot to add a turret"
 	statusLabel.TextColor3 = Color3.fromRGB(255, 180, 80)
 	statusLabel.TextScaled = true
 	statusLabel.Font = Enum.Font.Gotham
-	statusLabel.Parent = container
+	statusLabel.Parent = loadoutBar
 
-	-- Scrolling frame for turret tiles
+	-- ── Picker overlay (appears above loadout bar when editing a slot) ───
+	pickerFrame = Instance.new("Frame")
+	pickerFrame.Name = "TurretPicker"
+	pickerFrame.Size = UDim2.new(0, 360, 0, 280)
+	pickerFrame.Position = UDim2.new(0.5, -180, 1, -390)
+	pickerFrame.BackgroundColor3 = Color3.fromRGB(20, 15, 40)
+	pickerFrame.BackgroundTransparency = 0.08
+	pickerFrame.BorderSizePixel = 0
+	pickerFrame.Visible = false
+	pickerFrame.Parent = screen
+
+	local pickerCorner = Instance.new("UICorner")
+	pickerCorner.CornerRadius = UDim.new(0, 10)
+	pickerCorner.Parent = pickerFrame
+
+	local pickerStroke = Instance.new("UIStroke")
+	pickerStroke.Color = Color3.fromRGB(100, 80, 160)
+	pickerStroke.Thickness = 2
+	pickerStroke.Parent = pickerFrame
+
+	-- Picker header
+	local pickerHeader = Instance.new("TextLabel")
+	pickerHeader.Name = "PickerHeader"
+	pickerHeader.Size = UDim2.new(1, 0, 0, 28)
+	pickerHeader.BackgroundTransparency = 1
+	pickerHeader.Text = "Choose a Turret"
+	pickerHeader.TextColor3 = Color3.fromRGB(255, 220, 80)
+	pickerHeader.TextScaled = true
+	pickerHeader.Font = Enum.Font.GothamBold
+	pickerHeader.Parent = pickerFrame
+
+	-- Close button
+	local closeBtn = Instance.new("TextButton")
+	closeBtn.Name = "CloseBtn"
+	closeBtn.Size = UDim2.new(0, 28, 0, 28)
+	closeBtn.Position = UDim2.new(1, -30, 0, 0)
+	closeBtn.BackgroundColor3 = Color3.fromRGB(160, 50, 50)
+	closeBtn.BorderSizePixel = 0
+	closeBtn.Text = "X"
+	closeBtn.TextColor3 = Color3.new(1, 1, 1)
+	closeBtn.TextScaled = true
+	closeBtn.Font = Enum.Font.GothamBold
+	closeBtn.Parent = pickerFrame
+
+	local closeBtnCorner = Instance.new("UICorner")
+	closeBtnCorner.CornerRadius = UDim.new(0, 4)
+	closeBtnCorner.Parent = closeBtn
+
+	closeBtn.MouseButton1Click:Connect(function()
+		closePicker()
+	end)
+
+	-- Scrolling list of turrets
 	local scrollFrame = Instance.new("ScrollingFrame")
-	scrollFrame.Name = "TurretTiles"
-	scrollFrame.Size = UDim2.new(1, -10, 1, -106)
-	scrollFrame.Position = UDim2.new(0, 5, 0, 102)
+	scrollFrame.Name = "TurretList"
+	scrollFrame.Size = UDim2.new(1, -12, 1, -34)
+	scrollFrame.Position = UDim2.new(0, 6, 0, 30)
 	scrollFrame.BackgroundTransparency = 1
 	scrollFrame.BorderSizePixel = 0
 	scrollFrame.ScrollBarThickness = 5
 	scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 150)
 	scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
 	scrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	scrollFrame.Parent = container
+	scrollFrame.Parent = pickerFrame
 
-	local tilesLayout = Instance.new("UIListLayout")
-	tilesLayout.Padding = UDim.new(0, 4)
-	tilesLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	tilesLayout.Parent = scrollFrame
+	local listLayout = Instance.new("UIListLayout")
+	listLayout.Padding = UDim.new(0, 4)
+	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	listLayout.Parent = scrollFrame
 
 	-- Build a tile for each turret
 	local allTurrets = TurretData.getAllTurrets()
 	for idx, turret in allTurrets do
 		local tile = Instance.new("TextButton")
-		tile.Name = "Tile_" .. turret.id
-		tile.Size = UDim2.new(1, -8, 0, 50)
-		tile.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
-		tile.BackgroundTransparency = 0.2
+		tile.Name = "Pick_" .. turret.id
+		tile.Size = UDim2.new(1, -10, 0, 52)
+		tile.BackgroundColor3 = Color3.fromRGB(35, 30, 55)
+		tile.BackgroundTransparency = 0.15
 		tile.BorderSizePixel = 0
 		tile.Text = ""
 		tile.AutoButtonColor = false
@@ -265,11 +437,11 @@ local function buildUI(): ScreenGui
 		tileCorner.CornerRadius = UDim.new(0, 6)
 		tileCorner.Parent = tile
 
-		-- Turret name
+		-- Name
 		local nameLabel = Instance.new("TextLabel")
 		nameLabel.Name = "TurretName"
-		nameLabel.Size = UDim2.new(0.65, 0, 0, 20)
-		nameLabel.Position = UDim2.new(0, 6, 0, 4)
+		nameLabel.Size = UDim2.new(0.6, 0, 0, 22)
+		nameLabel.Position = UDim2.new(0, 8, 0, 4)
 		nameLabel.BackgroundTransparency = 1
 		nameLabel.Text = turret.name
 		nameLabel.TextColor3 = Color3.new(1, 1, 1)
@@ -278,12 +450,12 @@ local function buildUI(): ScreenGui
 		nameLabel.TextXAlignment = Enum.TextXAlignment.Left
 		nameLabel.Parent = tile
 
-		-- Stats line
+		-- Stats
 		local statsText = string.format("DMG:%d  RNG:%d  SPD:%.1f", turret.damage, turret.range, turret.fireRate)
 		local statsLbl = Instance.new("TextLabel")
 		statsLbl.Name = "Stats"
-		statsLbl.Size = UDim2.new(1, -12, 0, 16)
-		statsLbl.Position = UDim2.new(0, 6, 0, 26)
+		statsLbl.Size = UDim2.new(1, -16, 0, 16)
+		statsLbl.Position = UDim2.new(0, 8, 0, 28)
 		statsLbl.BackgroundTransparency = 1
 		statsLbl.Text = statsText
 		statsLbl.TextColor3 = Color3.fromRGB(130, 200, 255)
@@ -292,11 +464,11 @@ local function buildUI(): ScreenGui
 		statsLbl.TextXAlignment = Enum.TextXAlignment.Left
 		statsLbl.Parent = tile
 
-		-- Locked overlay label (shown when turret is locked)
+		-- Locked label (shows price)
 		local lockedLabel = Instance.new("TextLabel")
 		lockedLabel.Name = "LockedLabel"
-		lockedLabel.Size = UDim2.new(0.3, 0, 0, 18)
-		lockedLabel.Position = UDim2.new(0.68, 0, 0, 4)
+		lockedLabel.Size = UDim2.new(0.4, 0, 0, 20)
+		lockedLabel.Position = UDim2.new(0.58, 0, 0, 4)
 		lockedLabel.BackgroundTransparency = 1
 		lockedLabel.Text = "🔒"
 		lockedLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
@@ -306,79 +478,31 @@ local function buildUI(): ScreenGui
 		lockedLabel.Visible = not (unlocks[turret.id] == true)
 		lockedLabel.Parent = tile
 
-		-- Selection highlight border
-		local highlight = Instance.new("Frame")
-		highlight.Name = "Highlight"
-		highlight.Size = UDim2.new(1, 0, 1, 0)
-		highlight.BackgroundTransparency = 1
-		highlight.BorderSizePixel = 0
-		highlight.Visible = false
-		highlight.Parent = tile
+		-- Already used label
+		local usedLabel = Instance.new("TextLabel")
+		usedLabel.Name = "UsedLabel"
+		usedLabel.Size = UDim2.new(0.3, 0, 0, 20)
+		usedLabel.Position = UDim2.new(0.68, 0, 0, 4)
+		usedLabel.BackgroundTransparency = 1
+		usedLabel.Text = "In Use"
+		usedLabel.TextColor3 = Color3.fromRGB(200, 180, 100)
+		usedLabel.TextScaled = true
+		usedLabel.Font = Enum.Font.Gotham
+		usedLabel.TextXAlignment = Enum.TextXAlignment.Right
+		usedLabel.Visible = false
+		usedLabel.Parent = tile
 
-		local highlightStroke = Instance.new("UIStroke")
-		highlightStroke.Color = Color3.fromRGB(80, 220, 80)
-		highlightStroke.Thickness = 2
-		highlightStroke.Parent = highlight
-
-		local highlightCorner = Instance.new("UICorner")
-		highlightCorner.CornerRadius = UDim.new(0, 6)
-		highlightCorner.Parent = highlight
-
-		tileButtons[turret.id] = tile
-		tileHighlights[turret.id] = highlight
+		pickerTiles[turret.id] = tile
 
 		tile.MouseButton1Click:Connect(function()
-			onTurretTileClicked(turret.id)
+			onPickerTurretSelected(turret.id)
 		end)
 	end
-
-	-- Blocking overlay: a subtle banner shown when loadout is incomplete
-	blockingOverlay = Instance.new("Frame")
-	blockingOverlay.Name = "LoadoutBlockOverlay"
-	blockingOverlay.Size = UDim2.new(0, 260, 0, 28)
-	blockingOverlay.Position = UDim2.new(0, 10, 1, -40)
-	blockingOverlay.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
-	blockingOverlay.BackgroundTransparency = 0.2
-	blockingOverlay.BorderSizePixel = 0
-	blockingOverlay.Visible = true
-	blockingOverlay.Parent = screen
-
-	local overlayCorner = Instance.new("UICorner")
-	overlayCorner.CornerRadius = UDim.new(0, 6)
-	overlayCorner.Parent = blockingOverlay
-
-	local overlayLabel = Instance.new("TextLabel")
-	overlayLabel.Size = UDim2.new(1, -8, 1, -4)
-	overlayLabel.Position = UDim2.new(0, 4, 0, 2)
-	overlayLabel.BackgroundTransparency = 1
-	overlayLabel.Text = "⚠ Select at least 1 turret before starting"
-	overlayLabel.TextColor3 = Color3.new(1, 1, 1)
-	overlayLabel.TextScaled = true
-	overlayLabel.Font = Enum.Font.GothamBold
-	overlayLabel.Parent = blockingOverlay
 
 	return screen
 end
 
--- Refresh tile visibility based on current unlocks
-local function refreshTileVisibility()
-	for _, turret in TurretData.getAllTurrets() do
-		local tile = tileButtons[turret.id]
-		if not tile then continue end
-		local isUnlocked = unlocks[turret.id] == true
-		-- Dim locked tiles
-		tile.BackgroundTransparency = isUnlocked and 0.2 or 0.6
-		-- Update locked label
-		local lockedLabel = tile:FindFirstChild("LockedLabel")
-		if lockedLabel then
-			lockedLabel.Visible = not isUnlocked
-		end
-	end
-end
-
 -- ── Public API ───────────────────────────────────────────────────────────────
-
-local screenRef: ScreenGui = nil
 
 function LoadoutSelector.show()
 	if screenRef then screenRef.Enabled = true end
@@ -386,6 +510,7 @@ end
 
 function LoadoutSelector.hide()
 	if screenRef then screenRef.Enabled = false end
+	closePicker()
 end
 
 function LoadoutSelector.init()
@@ -393,10 +518,23 @@ function LoadoutSelector.init()
 	screen.Parent = playerGui
 	screenRef = screen
 
-	-- Initial refresh
-	refreshTileVisibility()
+	-- Auto-select scout if only 1 turret unlocked and loadout is empty
+	local function tryAutoFill()
+		local unlockedIds = {}
+		for id, _ in unlocks do
+			table.insert(unlockedIds, id)
+		end
+		if #unlockedIds == 1 and #loadout == 0 then
+			loadout = { unlockedIds[1] }
+			refreshSlots()
+			refreshStatus()
+			fireSetLoadout()
+		end
+	end
+
 	tryAutoFill()
-	refreshAll()
+	refreshSlots()
+	refreshStatus()
 
 	-- Wire remotes
 	task.spawn(function()
@@ -408,6 +546,7 @@ function LoadoutSelector.init()
 
 		local SetLoadoutResult = Remotes:WaitForChild("SetLoadoutResult", 10)
 		local ShopUpdate = Remotes:WaitForChild("ShopUpdate", 10)
+		local SendLoadout = Remotes:WaitForChild("SendLoadout", 10)
 
 		-- Listen for loadout confirmation
 		if SetLoadoutResult then
@@ -426,18 +565,28 @@ function LoadoutSelector.init()
 			end)
 		end
 
-		-- Listen for shop updates (new turret purchased — unlocks sent as array of ids)
+		-- Listen for server sending saved loadout (on join)
+		if SendLoadout then
+			SendLoadout.OnClientEvent:Connect(function(serverLoadout: { number })
+				if serverLoadout and #serverLoadout > 0 then
+					loadout = serverLoadout
+					refreshSlots()
+					refreshStatus()
+				end
+			end)
+		end
+
+		-- Listen for shop updates (new turret purchased)
 		if ShopUpdate then
-			ShopUpdate.OnClientEvent:Connect(function(newUnlockArray: { number }, _newCoins: number)
-				-- Convert array of turret ids back to dictionary for fast lookup
+			ShopUpdate.OnClientEvent:Connect(function(newUnlockArray: { number }, newCoins: number)
 				local dict: { [number]: boolean } = {}
 				for _, id in ipairs(newUnlockArray) do
 					dict[id] = true
 				end
 				unlocks = dict
-				refreshTileVisibility()
+				persistentCoins = newCoins
 
-				-- Remove any loadout entries for turrets that are no longer unlocked
+				-- Remove loadout entries for turrets no longer unlocked
 				local changed = false
 				for i = #loadout, 1, -1 do
 					if not unlocks[loadout[i]] then
@@ -446,11 +595,14 @@ function LoadoutSelector.init()
 					end
 				end
 
-				-- Re-check auto-fill after unlock changes
 				tryAutoFill()
-
 				if changed then
-					refreshAll()
+					refreshSlots()
+					refreshStatus()
+				end
+				-- Refresh picker if open
+				if editingSlot then
+					refreshPickerTiles()
 				end
 			end)
 		end

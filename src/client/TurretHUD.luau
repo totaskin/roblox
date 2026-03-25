@@ -9,6 +9,7 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
 local TurretData = require(game.ReplicatedStorage.Shared.TurretData)
+local ResourceData = require(game.ReplicatedStorage.Shared.ResourceData)
 local ProximityPromptService = game:GetService("ProximityPromptService")
 
 local TurretHUD = {}
@@ -35,6 +36,10 @@ local ghostModel: Model? = nil
 local rangeCircle: Part? = nil
 local lastHoveredKey: string? = nil
 
+-- Player color state
+local playerColorMap: { [number]: Color3 } = {}
+local localPlayerColor: Color3? = nil
+
 -- Slot tracking (mirrors TowerPlacer occupied slots)
 local slotParts: { [string]: BasePart } = {}
 local occupiedSlots: { [string]: boolean } = {}
@@ -46,10 +51,28 @@ local selectedTurretData: {
 	level: number,
 	stats: { damage: number, range: number, fireRate: number },
 }? = nil
+local selectedTurretRunes: { number } = {} -- runes currently on the turret (up to 3)
+
+-- Rune slot UI references
+local runeSlotButtons: { TextButton } = {}
+local runePickerFrame: Frame = nil
+local runePickerButtons: { [number]: TextButton } = {}
+local editingRuneSlot: number? = nil -- which slot (1-3) is being edited
+
+-- Rune inventory (synced from server)
+local runeInventory: { [number]: number } = {}
 
 -- Proximity range circle (shown when player is near a placed turret)
 local turretRangeCircle: Part? = nil
 local lastNearTurretModel: Model? = nil
+
+-- Proximity rune slots UI (BillboardGui on turret)
+local proximityRuneGui: BillboardGui? = nil
+local proximityRuneSlots: { Frame } = {}
+local proximityTurretId: string? = nil
+
+-- Rune picker (screen-space, appears when clicking a proximity slot)
+local runePickerVisible: boolean = false
 
 -- UI references
 local screenGui: ScreenGui = nil
@@ -157,6 +180,10 @@ local function buildGhost(turretId: number)
 	body.Color = Color3.fromRGB(80, 160, 255)
 	body.Material = Enum.Material.Neon
 	body.Parent = model
+
+	if localPlayerColor then
+		body.Color = localPlayerColor
+	end
 
 	model.PrimaryPart = base
 	model.Parent = workspace
@@ -268,16 +295,125 @@ local function hideUpgradePanel()
 	if upgradePanel then
 		upgradePanel.Visible = false
 	end
+	if runePickerFrame then
+		runePickerFrame.Visible = false
+	end
+	editingRuneSlot = nil
 	selectedTurretInstanceId = nil
 	selectedTurretData = nil
+	selectedTurretRunes = {}
 end
 
-local function showUpgradePanel(instanceId: string, turretTypeId: number, level: number, stats: { damage: number, range: number, fireRate: number })
+local function refreshRuneSlots()
+	for i = 1, 3 do
+		local btn = runeSlotButtons[i]
+		if not btn then continue end
+		
+		local runeId = selectedTurretRunes[i]
+		local nameLbl = btn:FindFirstChild("RuneName")
+		
+		if runeId and runeId > 0 then
+			local res = ResourceData.Resources[runeId]
+			if res then
+				btn.BackgroundColor3 = res.color
+				if nameLbl then nameLbl.Text = string.sub(res.name, 1, 2) end
+			end
+		else
+			btn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+			if nameLbl then nameLbl.Text = "+" end
+		end
+		
+		-- Highlight if being edited
+		local stroke = btn:FindFirstChildOfClass("UIStroke")
+		if stroke then
+			stroke.Enabled = (editingRuneSlot == i)
+		end
+	end
+end
+
+local function refreshRunePicker()
+	if not runePickerFrame then return end
+	
+	for i = 1, 10 do
+		local btn = runePickerButtons[i]
+		if not btn then continue end
+		
+		local count = runeInventory[i] or 0
+		local countLbl = btn:FindFirstChild("CountLabel")
+		if countLbl then
+			countLbl.Text = "x" .. count
+		end
+		
+		-- Check if already used in another slot
+		local alreadyUsed = false
+		for slotIdx, runeId in ipairs(selectedTurretRunes) do
+			if runeId == i and slotIdx ~= editingRuneSlot then
+				alreadyUsed = true
+				break
+			end
+		end
+		
+		local res = ResourceData.Resources[i]
+		if count > 0 and not alreadyUsed then
+			btn.BackgroundColor3 = res and res.color or Color3.fromRGB(80, 80, 80)
+			btn.BackgroundTransparency = 0.1
+		else
+			btn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+			btn.BackgroundTransparency = 0.5
+		end
+	end
+end
+
+local function openRunePicker(slotIndex: number)
+	editingRuneSlot = slotIndex
+	refreshRuneSlots()
+	refreshRunePicker()
+	if runePickerFrame then
+		runePickerFrame.Visible = true
+	end
+end
+
+local function closeRunePicker()
+	editingRuneSlot = nil
+	if runePickerFrame then
+		runePickerFrame.Visible = false
+	end
+	refreshRuneSlots()
+end
+
+local function onRuneSelected(runeTypeId: number)
+	if not editingRuneSlot or not selectedTurretInstanceId then return end
+	
+	local count = runeInventory[runeTypeId] or 0
+	if count <= 0 then return end
+	
+	-- Check not already in another slot
+	for slotIdx, runeId in ipairs(selectedTurretRunes) do
+		if runeId == runeTypeId and slotIdx ~= editingRuneSlot then
+			return
+		end
+	end
+	
+	-- Fire ApplyRune to server
+	local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	if Remotes then
+		local ApplyRune = Remotes:FindFirstChild("ApplyRune")
+		if ApplyRune then
+			ApplyRune:FireServer(selectedTurretInstanceId, runeTypeId)
+		end
+	end
+	
+	closeRunePicker()
+end
+
+local function showUpgradePanel(instanceId: string, turretTypeId: number, level: number, stats: { damage: number, range: number, fireRate: number }, runes: { number }?)
 	selectedTurretInstanceId = instanceId
 	selectedTurretData = { turretTypeId = turretTypeId, level = level, stats = stats }
+	selectedTurretRunes = runes or {}
 
 	if not upgradePanel then return end
 	upgradePanel.Visible = true
+	closeRunePicker()
 
 	local turret = TurretData.getTurretById(turretTypeId)
 	local turretName = turret and turret.name or ("Turret #" .. turretTypeId)
@@ -302,6 +438,8 @@ local function showUpgradePanel(instanceId: string, turretTypeId: number, level:
 			and Color3.fromRGB(50, 160, 80)
 			or Color3.fromRGB(80, 80, 80)
 	end
+	
+	refreshRuneSlots()
 end
 
 -- ── Build UI ─────────────────────────────────────────────────────────────────
@@ -435,8 +573,8 @@ local function buildUI(): ScreenGui
 	-- Upgrade panel (right side, hidden by default)
 	upgradePanel = Instance.new("Frame")
 	upgradePanel.Name = "UpgradePanel"
-	upgradePanel.Size = UDim2.new(0, 240, 0, 160)
-	upgradePanel.Position = UDim2.new(1, -250, 0.5, -80)
+	upgradePanel.Size = UDim2.new(0, 240, 0, 140)
+	upgradePanel.Position = UDim2.new(1, -250, 0.5, -70)
 	upgradePanel.BackgroundColor3 = Color3.fromRGB(15, 15, 30)
 	upgradePanel.BackgroundTransparency = 0.1
 	upgradePanel.BorderSizePixel = 0
@@ -517,6 +655,121 @@ local function buildUI(): ScreenGui
 		hideUpgradePanel()
 	end)
 
+	-- Rune picker panel (appears when clicking a proximity rune slot)
+	runePickerFrame = Instance.new("Frame")
+	runePickerFrame.Name = "RunePicker"
+	runePickerFrame.Size = UDim2.new(0, 200, 0, 340)
+	runePickerFrame.Position = UDim2.new(0.5, -100, 0.5, -170)
+	runePickerFrame.BackgroundColor3 = Color3.fromRGB(20, 15, 35)
+	runePickerFrame.BackgroundTransparency = 0.05
+	runePickerFrame.BorderSizePixel = 0
+	runePickerFrame.Visible = false
+	runePickerFrame.Parent = screen
+
+	local pickerCorner = Instance.new("UICorner")
+	pickerCorner.CornerRadius = UDim.new(0, 8)
+	pickerCorner.Parent = runePickerFrame
+
+	local pickerStroke = Instance.new("UIStroke")
+	pickerStroke.Color = Color3.fromRGB(100, 80, 160)
+	pickerStroke.Thickness = 2
+	pickerStroke.Parent = runePickerFrame
+
+	local pickerTitle = Instance.new("TextLabel")
+	pickerTitle.Name = "Title"
+	pickerTitle.Size = UDim2.new(1, 0, 0, 28)
+	pickerTitle.BackgroundTransparency = 1
+	pickerTitle.Text = "Choose Rune"
+	pickerTitle.TextColor3 = Color3.fromRGB(255, 220, 80)
+	pickerTitle.TextScaled = true
+	pickerTitle.Font = Enum.Font.GothamBold
+	pickerTitle.Parent = runePickerFrame
+
+	local pickerCloseBtn = Instance.new("TextButton")
+	pickerCloseBtn.Name = "CloseBtn"
+	pickerCloseBtn.Size = UDim2.new(0, 24, 0, 24)
+	pickerCloseBtn.Position = UDim2.new(1, -26, 0, 2)
+	pickerCloseBtn.BackgroundColor3 = Color3.fromRGB(160, 50, 50)
+	pickerCloseBtn.BorderSizePixel = 0
+	pickerCloseBtn.Text = "X"
+	pickerCloseBtn.TextColor3 = Color3.new(1, 1, 1)
+	pickerCloseBtn.TextScaled = true
+	pickerCloseBtn.Font = Enum.Font.GothamBold
+	pickerCloseBtn.Parent = runePickerFrame
+
+	local pickerCloseBtnCorner = Instance.new("UICorner")
+	pickerCloseBtnCorner.CornerRadius = UDim.new(0, 4)
+	pickerCloseBtnCorner.Parent = pickerCloseBtn
+
+	pickerCloseBtn.MouseButton1Click:Connect(function()
+		closeRunePicker()
+	end)
+
+	local pickerList = Instance.new("ScrollingFrame")
+	pickerList.Name = "RuneList"
+	pickerList.Size = UDim2.new(1, -10, 1, -34)
+	pickerList.Position = UDim2.new(0, 5, 0, 30)
+	pickerList.BackgroundTransparency = 1
+	pickerList.BorderSizePixel = 0
+	pickerList.ScrollBarThickness = 4
+	pickerList.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 150)
+	pickerList.CanvasSize = UDim2.new(0, 0, 0, 0)
+	pickerList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	pickerList.Parent = runePickerFrame
+
+	local pickerListLayout = Instance.new("UIListLayout")
+	pickerListLayout.Padding = UDim.new(0, 4)
+	pickerListLayout.Parent = pickerList
+
+	for i = 1, 10 do
+		local res = ResourceData.Resources[i]
+
+		local runeBtn = Instance.new("TextButton")
+		runeBtn.Name = "Rune_" .. i
+		runeBtn.Size = UDim2.new(1, -4, 0, 28)
+		runeBtn.BackgroundColor3 = res.color
+		runeBtn.BackgroundTransparency = 0.1
+		runeBtn.BorderSizePixel = 0
+		runeBtn.Text = ""
+		runeBtn.AutoButtonColor = true
+		runeBtn.LayoutOrder = i
+		runeBtn.Parent = pickerList
+
+		local runeBtnCorner = Instance.new("UICorner")
+		runeBtnCorner.CornerRadius = UDim.new(0, 4)
+		runeBtnCorner.Parent = runeBtn
+
+		local runeNameLbl = Instance.new("TextLabel")
+		runeNameLbl.Name = "NameLabel"
+		runeNameLbl.Size = UDim2.new(0.65, 0, 1, 0)
+		runeNameLbl.Position = UDim2.new(0, 6, 0, 0)
+		runeNameLbl.BackgroundTransparency = 1
+		runeNameLbl.Text = res.name
+		runeNameLbl.TextColor3 = Color3.new(1, 1, 1)
+		runeNameLbl.TextScaled = true
+		runeNameLbl.Font = Enum.Font.GothamBold
+		runeNameLbl.TextXAlignment = Enum.TextXAlignment.Left
+		runeNameLbl.Parent = runeBtn
+
+		local runeCountLbl = Instance.new("TextLabel")
+		runeCountLbl.Name = "CountLabel"
+		runeCountLbl.Size = UDim2.new(0.3, 0, 1, 0)
+		runeCountLbl.Position = UDim2.new(0.68, 0, 0, 0)
+		runeCountLbl.BackgroundTransparency = 1
+		runeCountLbl.Text = "x0"
+		runeCountLbl.TextColor3 = Color3.fromRGB(220, 220, 220)
+		runeCountLbl.TextScaled = true
+		runeCountLbl.Font = Enum.Font.Gotham
+		runeCountLbl.TextXAlignment = Enum.TextXAlignment.Right
+		runeCountLbl.Parent = runeBtn
+
+		runePickerButtons[i] = runeBtn
+
+		runeBtn.MouseButton1Click:Connect(function()
+			onRuneSelected(i)
+		end)
+	end
+
 	-- Game over toast (small, non-blocking — the LobbyClient results screen handles the main overlay)
 	gameOverLabel = Instance.new("TextLabel")
 	gameOverLabel.Name = "GameOverToast"
@@ -540,13 +793,152 @@ local function buildUI(): ScreenGui
 	return screen
 end
 
--- ── Proximity range circle ────────────────────────────────────────────────────
+-- ── Proximity range circle and rune slots ─────────────────────────────────────
 
 local PROXIMITY_RANGE = 14 -- how close the player needs to be to see the range circle
 
+local function clearProximityRuneGui()
+	if proximityRuneGui then
+		proximityRuneGui:Destroy()
+		proximityRuneGui = nil
+	end
+	proximityRuneSlots = {}
+	proximityTurretId = nil
+end
+
 local function clearTurretRangeCircle()
 	if turretRangeCircle then turretRangeCircle:Destroy(); turretRangeCircle = nil end
+	clearProximityRuneGui()
 	lastNearTurretModel = nil
+end
+
+local function createProximityRuneSlots(turretModel: Model)
+	clearProximityRuneGui()
+	
+	local instanceId = turretModel:GetAttribute("TurretInstanceId")
+	if not instanceId then return end
+	proximityTurretId = instanceId
+	
+	-- Read current runes from model
+	local runes = {}
+	local runeStr = turretModel:GetAttribute("TurretRunes")
+	if runeStr and runeStr ~= "" then
+		for id in string.gmatch(runeStr, "%d+") do
+			table.insert(runes, tonumber(id))
+		end
+	end
+	
+	-- Create BillboardGui attached to turret
+	local base = turretModel:FindFirstChild("Base")
+	if not base then return end
+	
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "ProximityRuneSlots"
+	billboard.Size = UDim2.new(0, 180, 0, 70)
+	billboard.StudsOffset = Vector3.new(0, 5, 0)
+	billboard.Adornee = base
+	billboard.AlwaysOnTop = true
+	billboard.Active = true -- Enable mouse input
+	billboard.Parent = playerGui
+	proximityRuneGui = billboard
+	
+	-- Background
+	local bg = Instance.new("Frame")
+	bg.Name = "Background"
+	bg.Size = UDim2.new(1, 0, 1, 0)
+	bg.BackgroundColor3 = Color3.fromRGB(15, 15, 30)
+	bg.BackgroundTransparency = 0.2
+	bg.BorderSizePixel = 0
+	bg.Parent = billboard
+	
+	local bgCorner = Instance.new("UICorner")
+	bgCorner.CornerRadius = UDim.new(0, 8)
+	bgCorner.Parent = bg
+	
+	-- Title
+	local title = Instance.new("TextLabel")
+	title.Name = "Title"
+	title.Size = UDim2.new(1, 0, 0, 18)
+	title.BackgroundTransparency = 1
+	title.Text = "Rune Slots"
+	title.TextColor3 = Color3.fromRGB(200, 180, 255)
+	title.TextScaled = true
+	title.Font = Enum.Font.GothamBold
+	title.Parent = bg
+	
+	-- Slots container
+	local slotsContainer = Instance.new("Frame")
+	slotsContainer.Name = "Slots"
+	slotsContainer.Size = UDim2.new(1, -10, 0, 44)
+	slotsContainer.Position = UDim2.new(0, 5, 0, 20)
+	slotsContainer.BackgroundTransparency = 1
+	slotsContainer.Parent = bg
+	
+	local layout = Instance.new("UIListLayout")
+	layout.FillDirection = Enum.FillDirection.Horizontal
+	layout.Padding = UDim.new(0, 8)
+	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.Parent = slotsContainer
+	
+	-- Create 3 rune slots
+	for i = 1, 3 do
+		local runeId = runes[i]
+		local res = runeId and ResourceData.Resources[runeId]
+		
+		local slot = Instance.new("TextButton")
+		slot.Name = "Slot_" .. i
+		slot.Size = UDim2.new(0, 44, 0, 44)
+		slot.BackgroundColor3 = res and res.color or Color3.fromRGB(50, 50, 70)
+		slot.BackgroundTransparency = res and 0.1 or 0.3
+		slot.BorderSizePixel = 0
+		slot.Text = ""
+		slot.AutoButtonColor = true
+		slot.Parent = slotsContainer
+		
+		local slotCorner = Instance.new("UICorner")
+		slotCorner.CornerRadius = UDim.new(0, 8)
+		slotCorner.Parent = slot
+		
+		local slotStroke = Instance.new("UIStroke")
+		slotStroke.Color = Color3.fromRGB(100, 80, 160)
+		slotStroke.Thickness = 2
+		slotStroke.Parent = slot
+		
+		local label = Instance.new("TextLabel")
+		label.Name = "Label"
+		label.Size = UDim2.new(1, -4, 1, -4)
+		label.Position = UDim2.new(0, 2, 0, 2)
+		label.BackgroundTransparency = 1
+		label.Text = res and string.sub(res.name, 1, 2) or "+"
+		label.TextColor3 = Color3.new(1, 1, 1)
+		label.TextScaled = true
+		label.Font = Enum.Font.GothamBold
+		label.Parent = slot
+		
+		proximityRuneSlots[i] = slot
+		
+		-- Click to open rune picker for this slot
+		slot.MouseButton1Click:Connect(function()
+			-- Check if slot already has a rune (can't replace for now)
+			if runes[i] then
+				showError("Slot already has a rune")
+				return
+			end
+			-- Check if all 3 slots are full
+			if #runes >= 3 then
+				showError("All rune slots are full")
+				return
+			end
+			-- Open the rune picker for this turret and slot
+			selectedTurretInstanceId = instanceId
+			editingRuneSlot = i
+			selectedTurretRunes = runes
+			if runePickerFrame then
+				runePickerFrame.Visible = true
+				refreshRunePicker()
+			end
+		end)
+	end
 end
 
 local function showTurretRangeCircle(turretModel: Model, range: number)
@@ -569,6 +961,9 @@ local function showTurretRangeCircle(turretModel: Model, range: number)
 	circle.CFrame = CFrame.new(base.Position + Vector3.new(0, 0.8, 0)) * CFrame.Angles(0, 0, math.rad(90))
 	circle.Parent = workspace
 	turretRangeCircle = circle
+	
+	-- Also show the rune slots UI
+	createProximityRuneSlots(turretModel)
 end
 
 -- ── RenderStepped: placement hover logic ─────────────────────────────────────
@@ -608,6 +1003,36 @@ local function startRenderLoop()
 			end
 		elseif isPlacing then
 			clearTurretRangeCircle()
+		end
+
+		-- Animate orbiting runes on all turrets
+		local currentTime = tick()
+		for _, obj in workspace:GetChildren() do
+			if obj:IsA("Model") and obj:GetAttribute("TurretInstanceId") then
+				local base = obj:FindFirstChild("Base")
+				if base then
+					local basePos = base.Position
+					local orbitRadius = 2.5
+					local orbitHeight = 3.5
+					local orbitSpeed = 0.8 -- radians per second
+					
+					for _, child in obj:GetChildren() do
+						if child.Name:match("^RuneOrb_") then
+							local slotIndex = tonumber(child.Name:match("RuneOrb_(%d+)"))
+							if slotIndex then
+								-- Calculate orbit position with time-based rotation
+								local baseAngle = (slotIndex - 1) * (2 * math.pi / 3)
+								local angle = baseAngle + currentTime * orbitSpeed
+								local offsetX = math.cos(angle) * orbitRadius
+								local offsetZ = math.sin(angle) * orbitRadius
+								-- Add gentle bobbing
+								local bob = math.sin(currentTime * 2 + slotIndex) * 0.3
+								child.Position = basePos + Vector3.new(offsetX, orbitHeight + bob, offsetZ)
+							end
+						end
+					end
+				end
+			end
 		end
 
 		if not isPlacing then return end
@@ -729,11 +1154,21 @@ function TurretHUD.init()
 					local dmg = obj:GetAttribute("TurretDamage") or 0
 					local rng = obj:GetAttribute("TurretRange") or 0
 					local spd = obj:GetAttribute("TurretFireRate") or 0
+					
+					-- Read runes from model attribute (comma-separated string)
+					local runes = {}
+					local runeStr = obj:GetAttribute("TurretRunes")
+					if runeStr and runeStr ~= "" then
+						for id in string.gmatch(runeStr, "%d+") do
+							table.insert(runes, tonumber(id))
+						end
+					end
+					
 					showUpgradePanel(instanceId, typeId, level, {
 						damage = dmg,
 						range = rng,
 						fireRate = spd,
-					})
+					}, runes)
 					break
 				end
 			end
@@ -797,6 +1232,18 @@ function TurretHUD.init()
 		if not Remotes then
 			warn("[TurretHUD] Remotes folder not found")
 			return
+		end
+
+		-- PlayerColorsAssigned: receive color map from server
+		local PlayerColorsAssigned = Remotes:WaitForChild("PlayerColorsAssigned", 10)
+		if PlayerColorsAssigned then
+			PlayerColorsAssigned.OnClientEvent:Connect(function(colorMap: { [number]: { R: number, G: number, B: number } })
+				playerColorMap = {}
+				for userId, components in pairs(colorMap) do
+					playerColorMap[userId] = Color3.new(components.R, components.G, components.B)
+				end
+				localPlayerColor = playerColorMap[player.UserId]
+			end)
 		end
 
 		-- Task 13.3: PlaceTurretResult
@@ -887,6 +1334,59 @@ function TurretHUD.init()
 				-- Clean up placement state
 				cancelPlacement()
 				hideUpgradePanel()
+			end)
+		end
+
+		-- RuneInventoryUpdate: keep local rune inventory in sync
+		local RuneInventoryUpdate = Remotes:WaitForChild("RuneInventoryUpdate", 10)
+		if RuneInventoryUpdate then
+			RuneInventoryUpdate.OnClientEvent:Connect(function(inventory: { [number]: number })
+				runeInventory = inventory
+				refreshRunePicker()
+			end)
+		end
+
+		-- TurretRunesUpdate: update rune slots when runes are applied
+		local TurretRunesUpdate = Remotes:WaitForChild("TurretRunesUpdate", 10)
+		if TurretRunesUpdate then
+			TurretRunesUpdate.OnClientEvent:Connect(function(turretInstanceId: string, runes: { number }, stats: { damage: number, range: number, fireRate: number })
+				-- Update model attribute for future reads
+				for _, obj in workspace:GetChildren() do
+					if obj:IsA("Model") and obj:GetAttribute("TurretInstanceId") == turretInstanceId then
+						local runeStr = table.concat(runes, ",")
+						obj:SetAttribute("TurretRunes", runeStr)
+						obj:SetAttribute("TurretDamage", stats.damage)
+						obj:SetAttribute("TurretRange", stats.range)
+						obj:SetAttribute("TurretFireRate", stats.fireRate)
+						
+						-- Refresh proximity rune slots if this turret is nearby
+						if proximityTurretId == turretInstanceId and lastNearTurretModel then
+							createProximityRuneSlots(lastNearTurretModel)
+						end
+						break
+					end
+				end
+
+				-- If this turret's panel is open, update the display
+				if selectedTurretInstanceId == turretInstanceId then
+					selectedTurretRunes = runes
+					if selectedTurretData then
+						selectedTurretData.stats = stats
+					end
+					refreshRuneSlots()
+					if upgradeStatsLabel then
+						upgradeStatsLabel.Text = string.format(
+							"DMG: %.1f  RNG: %.1f  SPD: %.1f",
+							stats.damage, stats.range, stats.fireRate
+						)
+					end
+				end
+				
+				-- Close the rune picker after successful application
+				if runePickerFrame and runePickerFrame.Visible then
+					runePickerFrame.Visible = false
+					editingRuneSlot = nil
+				end
 			end)
 		end
 

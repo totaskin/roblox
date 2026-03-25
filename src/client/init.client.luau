@@ -7,6 +7,7 @@ local TurretShopUI = require(script.TurretShopUI)
 local LoadoutSelector = require(script.LoadoutSelector)
 local TurretHUD = require(script.TurretHUD)
 local RuneHUD = require(script.RuneHUD)
+local RuneShopUI = require(script.RuneShopUI)
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -16,6 +17,7 @@ TurretShopUI.init()
 LoadoutSelector.init()
 TurretHUD.init()
 RuneHUD.init()
+RuneShopUI.init()
 
 -- ── Simple test UI (no server dependency) ────────────────────────────────────
 local screen = Instance.new("ScreenGui")
@@ -34,67 +36,14 @@ bar.Parent = screen
 
 
 
--- Resource strip at bottom
 local ResourceData = require(game.ReplicatedStorage.Shared.ResourceData)
-
-local strip = Instance.new("Frame")
-strip.Size = UDim2.new(1, 0, 0, 70)
-strip.Position = UDim2.new(0, 0, 1, -70)
-strip.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
-strip.BackgroundTransparency = 0.2
-strip.BorderSizePixel = 0
-strip.Parent = screen
-
-local layout = Instance.new("UIListLayout")
-layout.FillDirection = Enum.FillDirection.Horizontal
-layout.Padding = UDim.new(0, 4)
-layout.VerticalAlignment = Enum.VerticalAlignment.Center
-layout.Parent = strip
-
-local padding = Instance.new("UIPadding")
-padding.PaddingLeft = UDim.new(0, 8)
-padding.Parent = strip
-
-for i = 1, 10 do
-	local res = ResourceData.Resources[i]
-
-	local slot = Instance.new("Frame")
-	slot.Size = UDim2.new(0, 80, 0, 60)
-	slot.BackgroundColor3 = res.color
-	slot.BackgroundTransparency = 0.2
-	slot.BorderSizePixel = 0
-	slot.Parent = strip
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 6)
-	corner.Parent = slot
-
-	local name = Instance.new("TextLabel")
-	name.Size = UDim2.new(1, 0, 0.5, 0)
-	name.BackgroundTransparency = 1
-	name.Text = res.name
-	name.TextColor3 = Color3.new(1, 1, 1)
-	name.TextScaled = true
-	name.Font = Enum.Font.GothamBold
-	name.Parent = slot
-
-	local count = Instance.new("TextLabel")
-	count.Size = UDim2.new(1, 0, 0.5, 0)
-	count.Position = UDim2.new(0, 0, 0.5, 0)
-	count.BackgroundTransparency = 1
-	count.Text = "x0"
-	count.TextColor3 = Color3.fromRGB(200, 200, 200)
-	count.TextScaled = true
-	count.Font = Enum.Font.Gotham
-	count.Parent = slot
-end
 
 -- Wave info label in center of bar
 local waveLabel = Instance.new("TextLabel")
 waveLabel.Size = UDim2.new(0.4, 0, 0, 48)
 waveLabel.Position = UDim2.new(0.3, 0, 0, 0)
 waveLabel.BackgroundTransparency = 1
-waveLabel.Text = "Waiting for server..."
+waveLabel.Text = "Step on a pad to play!"
 waveLabel.TextColor3 = Color3.fromRGB(255, 220, 80)
 waveLabel.TextScaled = true
 waveLabel.Font = Enum.Font.GothamBold
@@ -106,7 +55,7 @@ local moneyLabel = Instance.new("TextLabel")
 moneyLabel.Size = UDim2.new(0, 140, 0, 48)
 moneyLabel.Position = UDim2.new(0, 8, 0, 0)
 moneyLabel.BackgroundTransparency = 1
-moneyLabel.Text = "💰 150"
+moneyLabel.Text = ""
 moneyLabel.TextColor3 = Color3.fromRGB(255, 220, 50)
 moneyLabel.TextScaled = true
 moneyLabel.Font = Enum.Font.GothamBold
@@ -136,7 +85,7 @@ task.spawn(function()
 		return
 	end
 
-	waveLabel.Text = "Round 0 — Waiting..."
+	waveLabel.Text = "Step on a pad to play!"
 
 	-- Track whether LobbyShowResults has been received after a GameOver
 	local gotResults = false
@@ -172,6 +121,7 @@ task.spawn(function()
 		LoadoutSelector.hide()
 		TurretHUD.show()
 		RuneHUD.show()
+		LobbyClient.hideRuneDisplay()
 	end)
 
 	Remotes:WaitForChild("WaveCleared").OnClientEvent:Connect(function(round)
@@ -179,16 +129,17 @@ task.spawn(function()
 		waveLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
 	end)
 
-	Remotes:WaitForChild("Intermission").OnClientEvent:Connect(function(secs)
-		-- Live countdown
+	Remotes:WaitForChild("Intermission").OnClientEvent:Connect(function(secs, currentRound)
+		-- Live countdown showing which round is next
 		local remaining = secs
-		waveLabel.Text = "Next wave in " .. remaining .. "s"
+		local nextRound = (currentRound or 0) + 1
+		waveLabel.Text = "Round " .. nextRound .. " in " .. remaining .. "s"
 		waveLabel.TextColor3 = Color3.fromRGB(180, 180, 255)
 		task.spawn(function()
 			while remaining > 0 do
 				task.wait(1)
 				remaining -= 1
-				waveLabel.Text = "Next wave in " .. remaining .. "s"
+				waveLabel.Text = "Round " .. nextRound .. " in " .. remaining .. "s"
 			end
 		end)
 	end)
@@ -196,6 +147,14 @@ task.spawn(function()
 	Remotes:WaitForChild("MoneyUpdate").OnClientEvent:Connect(function(amount)
 		moneyLabel.Text = "💰 " .. amount
 	end)
+
+	-- Show persistent coins in the lobby (before a game starts)
+	local ShopUpdate = Remotes:WaitForChild("ShopUpdate", 10)
+	if ShopUpdate then
+		ShopUpdate.OnClientEvent:Connect(function(_unlockArray: { number }, coins: number)
+			moneyLabel.Text = "💰 " .. coins
+		end)
+	end
 
 	Remotes:WaitForChild("BaseDamaged").OnClientEvent:Connect(function(hp)
 		baseLabel.Text = "🏰 " .. hp
@@ -211,7 +170,7 @@ task.spawn(function()
 			gotResults = true
 			TurretHUD.hide()
 			RuneHUD.hide()
-			TurretShopUI.show()
+			TurretShopUI.hide()
 			LoadoutSelector.show()
 			-- Hide the in-game HUD so it doesn't block the results screen
 			screen.Enabled = false
@@ -231,7 +190,7 @@ task.spawn(function()
 		task.delay(3, function()
 			if not gotResults then
 				warn("[Client] LobbyShowResults not received — showing fallback results screen")
-				TurretShopUI.show()
+				TurretShopUI.hide()
 				LoadoutSelector.show()
 				screen.Enabled = false
 				LobbyClient.showFallbackResults(round)
@@ -252,6 +211,176 @@ task.spawn(function()
 		waveLabel.Text = "Boss dropped: " .. res.name .. "!"
 		waveLabel.TextColor3 = res.color
 	end)
+
+	-- Colorful rune drop notification
+	print("[Client] Looking for RuneDrop remote...")
+	local RuneDrop = Remotes:WaitForChild("RuneDrop", 15)
+	if RuneDrop then
+		print("[Client] RuneDrop remote found! Connecting notification handler...")
+		RuneDrop.OnClientEvent:Connect(function(runeTypeId: number)
+			print("[Client] *** RuneDrop notification received! runeTypeId:", runeTypeId, "***")
+			local res = ResourceData.Resources[runeTypeId]
+			if not res then 
+				print("[Client] Invalid rune type:", runeTypeId)
+				return 
+			end
+
+			-- Create a BIG fancy notification frame (centered on screen)
+			local notification = Instance.new("Frame")
+			notification.Name = "RuneDropNotification"
+			notification.Size = UDim2.new(0, 450, 0, 180)
+			notification.Position = UDim2.new(0.5, -225, 0.5, -200) -- Start above center
+			notification.BackgroundColor3 = Color3.fromRGB(10, 5, 25)
+			notification.BackgroundTransparency = 0.05
+			notification.BorderSizePixel = 0
+			notification.ZIndex = 100
+			notification.Parent = screen
+
+			local corner = Instance.new("UICorner")
+			corner.CornerRadius = UDim.new(0, 20)
+			corner.Parent = notification
+
+			-- Thick colorful border
+			local stroke = Instance.new("UIStroke")
+			stroke.Color = res.color
+			stroke.Thickness = 6
+			stroke.Parent = notification
+
+			-- Glowing background effect
+			local glow = Instance.new("Frame")
+			glow.Name = "Glow"
+			glow.Size = UDim2.new(1, 40, 1, 40)
+			glow.Position = UDim2.new(0, -20, 0, -20)
+			glow.BackgroundColor3 = res.color
+			glow.BackgroundTransparency = 0.7
+			glow.BorderSizePixel = 0
+			glow.ZIndex = 99
+			glow.Parent = notification
+
+			local glowCorner = Instance.new("UICorner")
+			glowCorner.CornerRadius = UDim.new(0, 30)
+			glowCorner.Parent = glow
+
+			-- "RUNE DROP!" header with sparkles - BIGGER
+			local header = Instance.new("TextLabel")
+			header.Name = "Header"
+			header.Size = UDim2.new(1, 0, 0, 50)
+			header.Position = UDim2.new(0, 0, 0, 10)
+			header.BackgroundTransparency = 1
+			header.Text = "✨ RUNE DROP! ✨"
+			header.TextColor3 = Color3.fromRGB(255, 220, 80)
+			header.TextScaled = true
+			header.Font = Enum.Font.GothamBold
+			header.ZIndex = 101
+			header.Parent = notification
+
+			-- Rune icon (colored circle) - BIGGER
+			local runeIcon = Instance.new("Frame")
+			runeIcon.Name = "RuneIcon"
+			runeIcon.Size = UDim2.new(0, 70, 0, 70)
+			runeIcon.Position = UDim2.new(0, 30, 0, 70)
+			runeIcon.BackgroundColor3 = res.color
+			runeIcon.BorderSizePixel = 0
+			runeIcon.ZIndex = 101
+			runeIcon.Parent = notification
+
+			local iconCorner = Instance.new("UICorner")
+			iconCorner.CornerRadius = UDim.new(0.5, 0)
+			iconCorner.Parent = runeIcon
+
+			local iconGlow = Instance.new("UIStroke")
+			iconGlow.Color = Color3.new(1, 1, 1)
+			iconGlow.Thickness = 3
+			iconGlow.Transparency = 0.3
+			iconGlow.Parent = runeIcon
+
+			-- Rune abbreviation inside icon
+			local iconText = Instance.new("TextLabel")
+			iconText.Size = UDim2.new(1, 0, 1, 0)
+			iconText.BackgroundTransparency = 1
+			iconText.Text = string.sub(res.name, 1, 2)
+			iconText.TextColor3 = Color3.new(1, 1, 1)
+			iconText.TextScaled = true
+			iconText.Font = Enum.Font.GothamBold
+			iconText.ZIndex = 102
+			iconText.Parent = runeIcon
+
+			-- Rune name - BIGGER
+			local runeName = Instance.new("TextLabel")
+			runeName.Name = "RuneName"
+			runeName.Size = UDim2.new(0, 300, 0, 45)
+			runeName.Position = UDim2.new(0, 115, 0, 70)
+			runeName.BackgroundTransparency = 1
+			runeName.Text = res.name
+			runeName.TextColor3 = res.color
+			runeName.TextScaled = true
+			runeName.Font = Enum.Font.GothamBold
+			runeName.TextXAlignment = Enum.TextXAlignment.Left
+			runeName.ZIndex = 101
+			runeName.Parent = notification
+
+			-- Rune description/hint - BIGGER
+			local runeHint = Instance.new("TextLabel")
+			runeHint.Name = "RuneHint"
+			runeHint.Size = UDim2.new(0, 300, 0, 35)
+			runeHint.Position = UDim2.new(0, 115, 0, 115)
+			runeHint.BackgroundTransparency = 1
+			runeHint.Text = res.hint or ""
+			runeHint.TextColor3 = Color3.fromRGB(200, 200, 220)
+			runeHint.TextScaled = true
+			runeHint.Font = Enum.Font.Gotham
+			runeHint.TextXAlignment = Enum.TextXAlignment.Left
+			runeHint.TextWrapped = true
+			runeHint.ZIndex = 101
+			runeHint.Parent = notification
+
+			-- Animate: slide in from top to CENTER of screen
+			local TweenService = game:GetService("TweenService")
+			local slideIn = TweenService:Create(notification, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+				Position = UDim2.new(0.5, -225, 0.5, -90) -- Center of screen
+			})
+			slideIn:Play()
+
+			-- Pulse the glow more dramatically
+			task.spawn(function()
+				for _ = 1, 8 do
+					local pulseOut = TweenService:Create(glow, TweenInfo.new(0.25), { BackgroundTransparency = 0.5, Size = UDim2.new(1, 60, 1, 60) })
+					pulseOut:Play()
+					pulseOut.Completed:Wait()
+					local pulseIn = TweenService:Create(glow, TweenInfo.new(0.25), { BackgroundTransparency = 0.8, Size = UDim2.new(1, 40, 1, 40) })
+					pulseIn:Play()
+					pulseIn.Completed:Wait()
+				end
+			end)
+
+			-- Rotate the icon more dramatically
+			task.spawn(function()
+				for _ = 1, 5 do
+					local rotateLeft = TweenService:Create(runeIcon, TweenInfo.new(0.12), { Rotation = -15 })
+					rotateLeft:Play()
+					rotateLeft.Completed:Wait()
+					local rotateRight = TweenService:Create(runeIcon, TweenInfo.new(0.12), { Rotation = 15 })
+					rotateRight:Play()
+					rotateRight.Completed:Wait()
+				end
+				local rotateBack = TweenService:Create(runeIcon, TweenInfo.new(0.1), { Rotation = 0 })
+				rotateBack:Play()
+			end)
+
+			-- After 4 seconds, slide out and destroy
+			task.delay(4, function()
+				local slideOut = TweenService:Create(notification, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+					Position = UDim2.new(0.5, -225, 0, -200)
+				})
+				slideOut:Play()
+				slideOut.Completed:Wait()
+				notification:Destroy()
+			end)
+		end)
+		print("[Client] RuneDrop notification handler connected!")
+	else
+		warn("[Client] RuneDrop remote NOT found after 15 seconds!")
+	end
 
 	Remotes:WaitForChild("EnemyKilled").OnClientEvent:Connect(function(reward)
 		local current = tonumber(moneyLabel.Text:match("%d+")) or 0

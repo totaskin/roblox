@@ -7,6 +7,15 @@ local ResourceData        = require(game.ReplicatedStorage.Shared.ResourceData)
 local TurretData          = require(game.ReplicatedStorage.Shared.TurretData)
 local TurretManager       = require(script.Parent.TurretManager)
 
+-- Lazy-require DataManager to avoid circular dependency
+local DataManager
+local function getDataManager()
+	if not DataManager then
+		DataManager = require(script.Parent.DataManager)
+	end
+	return DataManager
+end
+
 local RuneManager = {}
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -30,9 +39,11 @@ local gamePhase: string = "LOBBY"
 -- ═══════════════════════════════════════════════════════════════════════════
 
 function RuneManager.initPlayer(userId: number)
+	-- Only initialize if not already set (DataManager may have loaded saved data)
+	if playerRuneInventories[userId] then return end
 	local inventory = {}
 	for i = 1, 10 do
-		inventory[i] = 0
+		inventory[i] = 0 -- Start with no runes, earn from boss kills
 	end
 	playerRuneInventories[userId] = inventory
 end
@@ -42,7 +53,18 @@ function RuneManager.removePlayer(userId: number)
 end
 
 function RuneManager.getInventory(userId: number): { [number]: number }
-	return playerRuneInventories[userId] or {}
+	local inv = playerRuneInventories[userId] or {}
+	print("[RuneManager] getInventory for user", userId, ":", inv)
+	return inv
+end
+
+-- Set inventory from loaded data (called by DataManager)
+function RuneManager.setInventory(userId: number, runes: { [number]: number })
+	local inventory = {}
+	for i = 1, 10 do
+		inventory[i] = runes[i] or 0
+	end
+	playerRuneInventories[userId] = inventory
 end
 
 function RuneManager.setGamePhase(phase: string)
@@ -50,16 +72,57 @@ function RuneManager.setGamePhase(phase: string)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- Add Runes (Task 3 - Rune Robux Purchase)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+function RuneManager.addRunes(userId: number, runeTypeId: number, quantity: number): boolean
+	-- Validate runeTypeId is in [1, 10]
+	if type(runeTypeId) ~= "number" or runeTypeId < 1 or runeTypeId > 10 or runeTypeId ~= math.floor(runeTypeId) then
+		return false
+	end
+
+	-- Validate quantity > 0
+	if type(quantity) ~= "number" or quantity <= 0 or quantity ~= math.floor(quantity) then
+		return false
+	end
+
+	-- Get or initialize inventory
+	local inventory = playerRuneInventories[userId]
+	if not inventory then
+		-- Initialize inventory if player doesn't have one yet
+		inventory = {}
+		for i = 1, 10 do
+			inventory[i] = 0
+		end
+		playerRuneInventories[userId] = inventory
+	end
+
+	-- Increment the rune count by the specified quantity
+	inventory[runeTypeId] = (inventory[runeTypeId] or 0) + quantity
+
+	-- Mark data as dirty for persistence
+	getDataManager().markDirty(userId)
+
+	return true
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- Boss Drop (Task 2.3)
 -- ═══════════════════════════════════════════════════════════════════════════
 
-function RuneManager.awardBossDrop(userIds: { number }, round: number): number
-	local runeTypeId = ResourceData.rollResourceDrop(round)
+function RuneManager.awardBossDrop(userIds: { number }, bossKillCount: number): number
+	local runeTypeId = ResourceData.rollResourceDrop(bossKillCount)
+	print("[RuneManager] awardBossDrop called. runeTypeId:", runeTypeId, "userIds:", userIds)
 
 	for _, userId in ipairs(userIds) do
 		local inventory = playerRuneInventories[userId]
+		print("[RuneManager] User", userId, "inventory exists:", inventory ~= nil)
 		if inventory then
 			inventory[runeTypeId] = (inventory[runeTypeId] or 0) + 1
+			print("[RuneManager] Added rune", runeTypeId, "to user", userId, "new count:", inventory[runeTypeId])
+			getDataManager().markDirty(userId)
+		else
+			warn("[RuneManager] No inventory for user", userId)
 		end
 	end
 
@@ -100,51 +163,52 @@ function RuneManager.recomputeTurretStats(turretInstanceId: string)
 		model:SetAttribute("TurretDamage", turret.stats.damage)
 		model:SetAttribute("TurretRange", turret.stats.range)
 		model:SetAttribute("TurretFireRate", turret.stats.fireRate)
+		-- Store runes as comma-separated string for client to read
+		local runeStr = table.concat(runeSlot, ",")
+		model:SetAttribute("TurretRunes", runeStr)
 	end
 
-	-- Task 4.1: Add/update neon glow Part colored by rune type(s)
+	-- Create/update orbiting rune parts around the turret
 	if model then
+		-- Remove old rune orbs
+		for _, child in model:GetChildren() do
+			if child.Name:match("^RuneOrb_") then
+				child:Destroy()
+			end
+		end
+		-- Also remove old single glow if it exists
 		local existingGlow = model:FindFirstChild("RuneGlow")
-		if #runeSlot > 0 then
-			-- Collect unique rune type ids to compute blended color
-			local uniqueTypes: { [number]: boolean } = {}
-			for _, rId in ipairs(runeSlot) do
-				uniqueTypes[rId] = true
-			end
+		if existingGlow then
+			existingGlow:Destroy()
+		end
 
-			-- Average the RGB values of all unique rune type colors
-			local totalR, totalG, totalB = 0, 0, 0
-			local count = 0
-			for rId, _ in pairs(uniqueTypes) do
-				local res = ResourceData.Resources[rId]
-				if res then
-					totalR = totalR + res.color.R
-					totalG = totalG + res.color.G
-					totalB = totalB + res.color.B
-					count = count + 1
-				end
-			end
-
-			local glowColor = Color3.new(totalR / count, totalG / count, totalB / count)
-
-			local glow = existingGlow
-			if not glow then
-				glow = Instance.new("Part")
-				glow.Name = "RuneGlow"
-				glow.Shape = Enum.PartType.Ball
-				glow.Anchored = true
-				glow.CanCollide = false
-				glow.Parent = model
-			end
-			glow.Size = Vector3.new(2, 2, 2)
-			glow.Material = Enum.Material.Neon
-			glow.Transparency = 0.3
-			glow.Position = turret.position + Vector3.new(0, 4.5, 0)
-			glow.Color = glowColor
-		else
-			-- No runes: remove glow if it exists
-			if existingGlow then
-				existingGlow:Destroy()
+		-- Create new orbiting rune parts for each applied rune
+		local orbitRadius = 2.5
+		local orbitHeight = 3.5
+		for i, runeId in ipairs(runeSlot) do
+			local res = ResourceData.Resources[runeId]
+			if res then
+				local orb = Instance.new("Part")
+				orb.Name = "RuneOrb_" .. i
+				orb.Shape = Enum.PartType.Ball
+				orb.Size = Vector3.new(1.2, 1.2, 1.2)
+				orb.Anchored = true
+				orb.CanCollide = false
+				orb.Material = Enum.Material.Neon
+				orb.Color = res.color
+				orb.Transparency = 0.2
+				
+				-- Position around turret (will be animated by client)
+				local angle = (i - 1) * (2 * math.pi / 3) -- 120 degrees apart for 3 slots
+				local offsetX = math.cos(angle) * orbitRadius
+				local offsetZ = math.sin(angle) * orbitRadius
+				orb.Position = turret.position + Vector3.new(offsetX, orbitHeight, offsetZ)
+				
+				-- Store the rune id and slot index as attributes for client animation
+				orb.SetAttribute(orb, "RuneId", runeId)
+				orb.SetAttribute(orb, "SlotIndex", i)
+				
+				orb.Parent = model
 			end
 		end
 	end
@@ -210,26 +274,28 @@ function RuneManager.applyRune(userId: number, turretInstanceId: string, runeTyp
 		return false, "Turret not found"
 	end
 
-	-- 3. Validate game phase is Intermission
-	if gamePhase ~= "Intermission" then
-		return false, "Runes can only be applied during intermission"
-	end
-
 	-- 4. Validate ownership
 	if turret.ownerId ~= userId then
 		return false, "Not your turret"
 	end
 
-	-- 5. Validate inventory count > 0
+	-- 5. Validate rune slot limit (max 3 runes per turret)
+	local currentSlots = turretRuneSlots[turretInstanceId] or {}
+	if #currentSlots >= 3 then
+		return false, "Turret already has 3 runes"
+	end
+
+	-- 6. Validate inventory count > 0
 	local inventory = playerRuneInventories[userId]
 	if not inventory or (inventory[runeTypeId] or 0) <= 0 then
 		return false, "No runes of this type available"
 	end
 
-	-- 6. Decrement inventory
+	-- 7. Decrement inventory
 	inventory[runeTypeId] = inventory[runeTypeId] - 1
+	getDataManager().markDirty(userId)
 
-	-- 7. Add to rune slot
+	-- 8. Add to rune slot
 	if not turretRuneSlots[turretInstanceId] then
 		turretRuneSlots[turretInstanceId] = {}
 	end
@@ -238,7 +304,7 @@ function RuneManager.applyRune(userId: number, turretInstanceId: string, runeTyp
 	-- Track owner for rune return
 	turretRuneOwners[turretInstanceId] = userId
 
-	-- 8. Recompute turret stats
+	-- 9. Recompute turret stats
 	RuneManager.recomputeTurretStats(turretInstanceId)
 
 	return true, nil
@@ -266,6 +332,7 @@ function RuneManager.returnAllRunes()
 				for _, runeTypeId in ipairs(runeSlot) do
 					inventory[runeTypeId] = (inventory[runeTypeId] or 0) + 1
 				end
+				getDataManager().markDirty(ownerId)
 			end
 		end
 	end
@@ -284,7 +351,8 @@ function RuneManager.getTurretRunes(turretInstanceId: string): { number }
 end
 
 function RuneManager.clearAll()
-	playerRuneInventories = {}
+	-- Only clear turret-related state, NOT player inventories
+	-- Player inventories persist across games and are managed by DataManager
 	turretRuneSlots = {}
 	turretRuneOwners = {}
 	gamePhase = "LOBBY"

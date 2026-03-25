@@ -11,6 +11,15 @@ local function getDataManager()
 	return DataManager
 end
 
+-- Lazy-require GamepassManager to apply coin multipliers
+local GamepassManager
+local function getGamepassManager()
+	if not GamepassManager then
+		GamepassManager = require(script.Parent.GamepassManager)
+	end
+	return GamepassManager
+end
+
 local EconomyManager = {}
 
 local playerMoney: { [number]: number } = {}
@@ -61,7 +70,8 @@ end
 
 function EconomyManager.addSessionCoins(userId: number, amount: number)
 	if playerSessionCoins[userId] then
-		playerSessionCoins[userId] += amount
+		local multiplier = getGamepassManager().getCoinMultiplier(userId)
+		playerSessionCoins[userId] += amount * multiplier
 	end
 end
 
@@ -111,7 +121,8 @@ end
 
 function EconomyManager.addKillEarnings(userId: number, amount: number)
 	if playerKillEarnings[userId] then
-		playerKillEarnings[userId] += amount
+		local multiplier = getGamepassManager().getCoinMultiplier(userId)
+		playerKillEarnings[userId] += amount * multiplier
 	end
 end
 
