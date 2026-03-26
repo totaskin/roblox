@@ -170,6 +170,10 @@ src/
 
 ## Release Notes
 
+### 0.9.5
+- Fixed turret placement costs resetting on new round (now only resets when starting a new game from lobby)
+- Improved leaderboard score submission reliability
+
 ### 0.9.4
 - Added weekly leaderboards on front wall showing top 10 players per difficulty
 - Implemented difficulty levels per lobby pad: Easy (1x), Medium (1.5x), Hard (2.5x rewards/enemy health)

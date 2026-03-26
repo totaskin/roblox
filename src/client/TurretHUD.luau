@@ -1080,8 +1080,8 @@ end
 
 -- ── Public API ───────────────────────────────────────────────────────────────
 
-function TurretHUD.show()
-	if screenGui then screenGui.Enabled = true end
+-- Called when a completely new game starts (from lobby)
+function TurretHUD.resetForNewGame()
 	-- Clear game over toast from previous game
 	if gameOverLabel then
 		gameOverLabel.Visible = false
@@ -1096,6 +1096,10 @@ function TurretHUD.show()
 	-- Reset placement counts for new game
 	turretPlacementCounts = {}
 	refreshLoadoutButtons()
+end
+
+function TurretHUD.show()
+	if screenGui then screenGui.Enabled = true end
 end
 
 function TurretHUD.setLoadout(newLoadout: { number })

@@ -96,10 +96,11 @@ task.spawn(function()
 		StateRequest:FireServer()
 	end
 
-	-- Listen for server-authoritative loadout
+	-- Listen for server-authoritative loadout (sent once at game start from lobby)
 	local SendLoadout = Remotes:WaitForChild("SendLoadout", 10)
 	if SendLoadout then
 		SendLoadout.OnClientEvent:Connect(function(serverLoadout: { number })
+			TurretHUD.resetForNewGame()
 			TurretHUD.setLoadout(serverLoadout)
 		end)
 	end

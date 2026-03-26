@@ -74,19 +74,30 @@ function DataManager.submitLeaderboardScore(userId: number, displayName: string,
 	local weekKey = getWeekKey()
 	local storeKey = weekKey .. "_" .. difficulty .. "_" .. tostring(userId)
 	
+	print("[DataManager] Submitting leaderboard score:", storeKey, "round:", round)
+	
 	task.spawn(function()
-		-- Store the round number in OrderedDataStore (only accepts numbers)
-		local ok, err = pcall(function()
-			getLeaderboardStore():UpdateAsync(storeKey, function(oldValue)
-				local oldRound = oldValue or 0
-				if round > oldRound then
-					return round
-				end
-				return oldRound
-			end)
+		-- First check if we already have a higher score
+		local currentScore = 0
+		local getOk, getResult = pcall(function()
+			return getLeaderboardStore():GetAsync(storeKey)
 		end)
-		if not ok then
-			warn("[DataManager] Failed to submit leaderboard score:", err)
+		if getOk and getResult then
+			currentScore = getResult
+		end
+		
+		-- Only update if new score is higher
+		if round > currentScore then
+			local ok, err = pcall(function()
+				getLeaderboardStore():SetAsync(storeKey, round)
+			end)
+			if ok then
+				print("[DataManager] Leaderboard score saved successfully:", storeKey, "=", round)
+			else
+				warn("[DataManager] Failed to submit leaderboard score:", err)
+			end
+		else
+			print("[DataManager] Score not higher than existing:", round, "<=", currentScore)
 		end
 		
 		-- Store the display name separately in regular DataStore
@@ -112,19 +123,23 @@ end
 -- Refresh all leaderboards from DataStore
 function DataManager.refreshLeaderboards()
 	local weekKey = getWeekKey()
+	print("[DataManager] Refreshing leaderboards for week:", weekKey)
 	
 	for _, difficulty in ipairs({ "Easy", "Medium", "Hard" }) do
 		task.spawn(function()
 			local ok, result = pcall(function()
-				-- Get top 10 scores for this difficulty this week
+				-- Get top 100 scores (we'll filter by week/difficulty)
 				local pages = getLeaderboardStore():GetSortedAsync(false, 100)
 				local entries: { { userId: number, displayName: string, round: number } } = {}
 				
 				local page = pages:GetCurrentPage()
+				print("[DataManager] Got", #page, "entries from OrderedDataStore for", difficulty)
+				
 				for _, entry in ipairs(page) do
 					-- Key format: Week_X_Difficulty_UserId
 					local keyPattern = weekKey .. "_" .. difficulty .. "_(%d+)"
 					local userIdStr = string.match(entry.key, keyPattern)
+					print("[DataManager] Entry key:", entry.key, "value:", entry.value, "matched:", userIdStr ~= nil)
 					if userIdStr then
 						local userId = tonumber(userIdStr)
 						local round = entry.value -- Now just a number
