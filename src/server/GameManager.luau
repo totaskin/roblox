@@ -461,7 +461,18 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 			getRemote("ApplyRuneResult"):FireClient(player, success, reason)
 			if success then
 				getRemote("RuneInventoryUpdate"):FireClient(player, RuneManager.getInventory(player.UserId))
-				broadcast("TurretRunesUpdate", turretInstanceId, RuneManager.getTurretRunes(turretInstanceId), TurretManager.getTurrets()[turretInstanceId].stats)
+				local turretRunes = RuneManager.getTurretRunes(turretInstanceId)
+				local turretStats = TurretManager.getTurrets()[turretInstanceId].stats
+				-- Determine combo quality: "success" (synergy), "neutral", or "failure" (clash)
+				local RuneCombinationData = require(game.ReplicatedStorage.Shared.RuneCombinationData)
+				local combined = RuneCombinationData.computeCombinedMultipliers(turretRunes)
+				local comboQuality = "neutral"
+				if combined.legendaryCombo or (combined.damage > 1.1 or combined.range > 1.1 or combined.fireRate > 1.1) then
+					comboQuality = "success"
+				elseif combined.damage < 0.95 or combined.range < 0.95 or combined.fireRate < 0.95 then
+					comboQuality = "failure"
+				end
+				broadcast("TurretRunesUpdate", turretInstanceId, turretRunes, turretStats, comboQuality)
 			end
 		end)
 

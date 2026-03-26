@@ -2102,6 +2102,8 @@ function LobbyManager.init()
 		"MapSelected",
 		-- Turret shop remote
 		"OpenTurretShop",
+		-- Debug remote
+		"DebugGiveRunes",
 	}
 	for _, name in ipairs(remoteNames) do
 		if not remotes:FindFirstChild(name) then
@@ -2316,6 +2318,22 @@ function LobbyManager.init()
 		playerLoadouts[userId] = turretIds
 		DataManager.markDirty(userId)
 		remotes.SetLoadoutResult:FireClient(player, true)
+	end)
+
+	-- Debug: Give 100 of each rune type (for testing) - OWNER ONLY
+	local OWNER_USER_ID = game.CreatorId -- Only the game owner can use this
+	remotes.DebugGiveRunes.OnServerEvent:Connect(function(player)
+		local userId = player.UserId
+		-- Security: Only allow the game owner to use this debug command
+		if userId ~= OWNER_USER_ID then
+			warn("[LobbyManager] Debug command rejected for non-owner:", player.Name)
+			return
+		end
+		for runeTypeId = 1, 10 do
+			RuneManager.addRunes(userId, runeTypeId, 100)
+		end
+		remotes.RuneInventoryUpdate:FireClient(player, RuneManager.getInventory(userId))
+		print("[LobbyManager] Debug: Gave 100 of each rune to", player.Name)
 	end)
 
 	-- Wire shop ProximityPrompt for double money gamepass

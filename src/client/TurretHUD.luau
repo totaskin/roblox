@@ -1397,7 +1397,23 @@ function TurretHUD.init()
 		-- TurretRunesUpdate: update rune slots when runes are applied
 		local TurretRunesUpdate = Remotes:WaitForChild("TurretRunesUpdate", 10)
 		if TurretRunesUpdate then
-			TurretRunesUpdate.OnClientEvent:Connect(function(turretInstanceId: string, runes: { number }, stats: { damage: number, range: number, fireRate: number })
+			TurretRunesUpdate.OnClientEvent:Connect(function(turretInstanceId: string, runes: { number }, stats: { damage: number, range: number, fireRate: number }, comboQuality: string?)
+				-- Play sound based on rune combination quality: "success", "neutral", or "failure"
+				local sound = Instance.new("Sound")
+				if comboQuality == "success" then
+					sound.SoundId = "rbxassetid://116607390360374" -- Synergy success
+				elseif comboQuality == "failure" then
+					sound.SoundId = "rbxassetid://117862559700716" -- Clash failure
+				else
+					sound.SoundId = "rbxassetid://127587426496549" -- Neutral default
+				end
+				sound.Volume = 0.5
+				sound.Parent = playerGui
+				sound:Play()
+				sound.Ended:Connect(function()
+					sound:Destroy()
+				end)
+				
 				-- Update model attribute for future reads
 				for _, obj in workspace:GetChildren() do
 					if obj:IsA("Model") and obj:GetAttribute("TurretInstanceId") == turretInstanceId then

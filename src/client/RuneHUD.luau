@@ -560,7 +560,7 @@ function RuneHUD.init()
 		-- Task 5.6: TurretRunesUpdate — update turret rune display and stat preview
 		local TurretRunesUpdate = Remotes:WaitForChild("TurretRunesUpdate", 10)
 		if TurretRunesUpdate then
-			TurretRunesUpdate.OnClientEvent:Connect(function(turretInstanceId: string, runes: { number }, stats: { damage: number, range: number, fireRate: number })
+			TurretRunesUpdate.OnClientEvent:Connect(function(turretInstanceId: string, runes: { number }, stats: { damage: number, range: number, fireRate: number }, _comboQuality: string?)
 				-- If the panel is open for this turret, update the display
 				if selectedTurretId == turretInstanceId then
 					currentTurretRunes = runes

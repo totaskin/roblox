@@ -429,3 +429,19 @@ speedBtn.MouseButton1Click:Connect(function()
 		end
 	end
 end)
+
+-- ── Debug: Press F8 to give 100 of each rune (for testing) ───────────────────
+local UserInputService = game:GetService("UserInputService")
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == Enum.KeyCode.F8 then
+		local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+		if Remotes then
+			local DebugGiveRunes = Remotes:FindFirstChild("DebugGiveRunes")
+			if DebugGiveRunes then
+				DebugGiveRunes:FireServer()
+				print("[Client] Debug: Requested 100 of each rune")
+			end
+		end
+	end
+end)

@@ -1353,6 +1353,15 @@ function TurretManager.update(dt: number)
 			local runeSlot = getTurretRunesCallback(turret.id)
 			if runeSlot and #runeSlot > 0 then
 				EnemyManager.applyRuneEffect(targetId, runeSlot)
+				
+				-- Apply slow effect if Frost rune (id 2) is equipped
+				for _, runeId in ipairs(runeSlot) do
+					if runeId == 2 then
+						-- Frost rune: 50% slow for 3 seconds (very noticeable)
+						EnemyManager.applySlow(targetId, 0.5, 3.0)
+						break
+					end
+				end
 			end
 		end
 

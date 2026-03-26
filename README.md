@@ -170,6 +170,15 @@ src/
 
 ## Release Notes
 
+### 0.9.8
+- Redesigned rune combination system: only ~20% of 2-rune combos are good (synergies), ~35% are bad (clashes)
+- Added 5 legendary 3-rune combos with massive bonuses (Phoenix, Aurora, Plague, Supernova, Oblivion)
+- Single runes now have tradeoffs (boost one stat, reduce another)
+- Added 3 sound effects for rune combos: success (synergy), neutral, failure (clash)
+- Frost rune slow effect is now much more noticeable (50% slow for 3 seconds)
+- Debug rune command (F8) now restricted to game owner only
+- Added rune combo documentation (docs/RuneCombos.md)
+
 ### 0.9.7
 - Fixed critical bug where runes could be lost when leaving the game (runes are now properly saved before cleanup)
 - Made lobby loadout selector responsive to screen size
