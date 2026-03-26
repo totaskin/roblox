@@ -25,6 +25,9 @@ local mouse = player:GetMouse()
 local sessionCoins: number = 100
 local killEarnings: number = 0
 
+-- Turret placement counts (for escalating costs, synced from server)
+local turretPlacementCounts: { [number]: number } = {}
+
 -- Loadout (populated via setLoadout before game starts)
 local loadout: { number } = {}
 
@@ -118,6 +121,15 @@ local function refreshCoinLabel()
 	end
 end
 
+-- Calculate escalating placement cost for a turret type
+local function getPlacementCost(turretTypeId: number): number
+	local turret = TurretData.getTurretById(turretTypeId)
+	if not turret then return 0 end
+	local baseCost = turret.placementCost
+	local count = turretPlacementCounts[turretTypeId] or 0
+	return math.floor(baseCost + (baseCost * 0.5 * count))
+end
+
 local function refreshLoadoutButtons()
 	for i = 1, 3 do
 		local btn = loadoutButtons[i]
@@ -131,7 +143,8 @@ local function refreshLoadoutButtons()
 		if turret then
 			if nameLbl then nameLbl.Text = turret.name end
 			if costLbl then
-				costLbl.Text = "💰 " .. turret.placementCost
+				local cost = getPlacementCost(turretId)
+				costLbl.Text = "💰 " .. cost
 			end
 		else
 			if nameLbl then nameLbl.Text = "Empty" end
@@ -227,8 +240,9 @@ local function enterPlacementMode(slotIndex: number)
 	local turret = TurretData.getTurretById(turretId)
 	if not turret then return end
 
-	if sessionCoins < turret.placementCost then
-		showError("Not enough coins (need " .. turret.placementCost .. ")")
+	local cost = getPlacementCost(turretId)
+	if sessionCoins < cost then
+		showError("Not enough coins (need " .. cost .. ")")
 		return
 	end
 
@@ -1079,6 +1093,8 @@ function TurretHUD.show()
 		part.Color = Color3.fromRGB(100, 200, 100)
 		part.Transparency = 0.5
 	end
+	-- Reset placement counts for new game
+	turretPlacementCounts = {}
 	refreshLoadoutButtons()
 end
 
@@ -1268,6 +1284,20 @@ function TurretHUD.init()
 					slotPart.Color = Color3.fromRGB(180, 60, 60)
 					slotPart.Transparency = 0.7
 				end
+			end)
+		end
+
+		-- TurretCostsUpdate: sync escalating placement costs
+		local TurretCostsUpdate = Remotes:WaitForChild("TurretCostsUpdate", 10)
+		if TurretCostsUpdate then
+			TurretCostsUpdate.OnClientEvent:Connect(function(counts: { [number]: number })
+				-- Convert string keys to numbers (Roblox serialization quirk)
+				local fixedCounts = {}
+				for k, v in pairs(counts) do
+					fixedCounts[tonumber(k)] = v
+				end
+				turretPlacementCounts = fixedCounts
+				refreshLoadoutButtons()
 			end)
 		end
 

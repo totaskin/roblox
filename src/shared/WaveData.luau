@@ -32,8 +32,9 @@ local ENEMY_TYPES = {
 	},
 }
 
--- Scales enemy stats based on round number
-local function scaleEnemy(baseType: string, round: number)
+-- Scales enemy stats based on round number and optional strength multiplier
+-- strengthMult is used when enemy count is capped to make fewer enemies stronger
+local function scaleEnemy(baseType: string, round: number, strengthMult: number?)
 	local base = ENEMY_TYPES[baseType]
 	assert(base, "Unknown enemy type: " .. baseType)
 	-- Accelerating difficulty: scaling % increases each round
@@ -43,10 +44,12 @@ local function scaleEnemy(baseType: string, round: number)
 		local rampRate = 1.3 + (r - 1) * 0.05 -- starts at 1.35, grows by 0.05 each round
 		scale = scale * rampRate
 	end
+	-- Apply strength multiplier (from enemy count cap)
+	local sMult = strengthMult or 1
 	return {
 		type     = baseType,
 		name     = base.name,
-		health   = math.floor(base.health * scale),
+		health   = math.floor(base.health * scale * sMult),
 		speed    = base.speed + round * 0.04 + round * round * 0.01, -- accelerating speed creep
 		reward   = math.floor(base.reward * (1 + (round - 1) * 0.08)), -- 8% linear reward scaling
 		isBoss   = base.isBoss,
@@ -68,8 +71,13 @@ local function generateWave(round: number)
 	local isBossRound = (round % 5 == 0)
 	local enemies = {}
 
-	-- Scale enemy count with round — accelerating growth
-	local baseCount = math.floor(8 + round * 3 + round * round * 0.5)
+	-- Scale enemy count with round — capped at 60 for performance
+	local uncappedCount = math.floor(8 + round * 3 + round * round * 0.5)
+	local baseCount = math.min(60, uncappedCount)
+	
+	-- Strength multiplier: when count is capped, enemies get stronger instead
+	-- After cap kicks in (~round 10), each round adds proportional strength
+	local strengthMult = uncappedCount / baseCount -- 1.0 when not capped, grows after
 
 	if isBossRound then
 		-- Boss wave: fewer normal enemies + 1 boss
@@ -103,6 +111,7 @@ local function generateWave(round: number)
 		round       = round,
 		enemies     = enemies,
 		isBossRound = isBossRound,
+		strengthMult = strengthMult,
 	}
 end
 

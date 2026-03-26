@@ -164,3 +164,18 @@ src/
     TowerPlacer.luau   -- grid UI + placement input
     UI.luau            -- HUD + inventory + build panel
 ```
+
+
+---
+
+## Release Notes
+
+### 0.9.4
+- Added weekly leaderboards on front wall showing top 10 players per difficulty
+- Implemented difficulty levels per lobby pad: Easy (1x), Medium (1.5x), Hard (2.5x rewards/enemy health)
+- Turret placement costs now escalate by 50% for each turret of the same type placed
+- Fixed various sync issues with turret costs and leaderboard data storage
+
+### 0.9.3
+- Improved turret placement UX: once the ghost preview snaps to a valid pad, clicking anywhere on the screen confirms placement (no longer need to click precisely on the pad)
+

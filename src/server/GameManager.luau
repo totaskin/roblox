@@ -31,17 +31,21 @@ local State = {
 -- createInstance: encapsulates all per-game state and logic.
 -- Each call returns an isolated instance table.
 -- ---------------------------------------------------------------------------
-local function createInstance(players: { Player }?, areaId: number?, loadouts: { [number]: { number } }?, mapName: string?)
+local function createInstance(players: { Player }?, areaId: number?, loadouts: { [number]: { number } }?, mapName: string?, difficulty: { name: string, enemyMult: number, rewardMult: number, startCoins: number }?)
 	-- Set player loadouts for turret system
 	if loadouts then
 		TurretManager.setPlayerLoadouts(loadouts)
 	end
+
+	-- Default difficulty if not provided
+	local diff = difficulty or { name = "Easy", enemyMult = 1.0, rewardMult = 1.0, startCoins = 100 }
 
 	-- Per-instance state variables
 	local self = {
 		players              = players,
 		areaId               = areaId,
 		mapName              = mapName or "Map1",
+		difficulty           = diff,
 		currentState         = State.LOBBY,
 		currentRound         = 0,
 		bossKillCount        = 0,
@@ -76,7 +80,7 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 		local userId = player.UserId
 		GamepassManager.initPlayer(player)
 		EconomyManager.initPlayer(userId)
-		EconomyManager.initSessionCoins(userId, 100)
+		EconomyManager.initSessionCoins(userId, self.difficulty.startCoins)
 		EconomyManager.initKillEarnings(userId)
 		ResourceManager.initPlayer(userId)
 		RuneManager.initPlayer(userId)
@@ -151,7 +155,8 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 
 		for _, userId in ipairs(getPlayerUserIds()) do
 			local mult = GamepassManager.getCoinMultiplier(userId)
-			local reward = enemyData.reward * mult
+			-- Apply difficulty reward multiplier
+			local reward = math.floor(enemyData.reward * mult * self.difficulty.rewardMult)
 			EconomyManager.addMoney(userId, reward)
 			EconomyManager.addSessionCoins(userId, reward)
 			EconomyManager.addKillEarnings(userId, reward)
@@ -241,7 +246,9 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 				self.spawnTimer -= scaledDt
 				if self.spawnTimer <= 0 then
 					local entry = self.spawnQueue[self.spawnIndex]
-					EnemyManager.spawnEnemy(entry.enemyType, self.currentRound)
+					-- Combine wave strength multiplier with difficulty enemy multiplier
+					local totalStrengthMult = self.strengthMult * self.difficulty.enemyMult
+					EnemyManager.spawnEnemy(entry.enemyType, self.currentRound, totalStrengthMult)
 					self.spawnTimer = entry.interval
 					self.spawnIndex += 1
 				end
@@ -304,6 +311,8 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 		broadcast("TurretPlaced", turretTypeId, gridX, gridZ, worldX, worldZ, result, ownerColor)
 		-- Update session coins for the placing player
 		getRemote("SessionCoinsUpdate"):FireClient(player, EconomyManager.getSessionCoins(userId))
+		-- Broadcast updated placement counts for escalating costs
+		broadcast("TurretCostsUpdate", TurretManager.getPlacementCounts())
 	end
 
 	-- Task 9.5: Handle turret upgrade
@@ -339,6 +348,7 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 		self.currentState = State.WAVE
 		RuneManager.setGamePhase("Wave")
 		self.enemiesAlive = 0
+		self.strengthMult = waveConfig.strengthMult or 1 -- Store for enemy spawning
 
 		self.spawnQueue = {}
 		for _, group in ipairs(waveConfig.enemies) do
@@ -381,7 +391,7 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 			-- Turret system remotes
 			"PlaceTurret", "PlaceTurretResult", "TurretPlaced", "PlayerColorsAssigned",
 			"UpgradeTurret", "UpgradeTurretResult", "TurretUpgraded",
-			"SessionCoinsUpdate", "KillEarningsUpdate", "TurretGameOver",
+			"SessionCoinsUpdate", "KillEarningsUpdate", "TurretGameOver", "TurretCostsUpdate",
 			-- Speed control
 			"SetGameSpeed", "GameSpeedChanged",
 			-- Rune system remotes
@@ -567,8 +577,8 @@ end
 -- GameManager.new: creates a scoped instance for a specific set of players
 -- and area. Does NOT auto-start — call instance.start() to begin.
 -- ---------------------------------------------------------------------------
-function GameManager.new(players: { Player }, areaId: number, loadouts: { [number]: { number } }?, mapName: string?)
-	return createInstance(players, areaId, loadouts, mapName)
+function GameManager.new(players: { Player }, areaId: number, loadouts: { [number]: { number } }?, mapName: string?, difficulty: { name: string, enemyMult: number, rewardMult: number, startCoins: number }?)
+	return createInstance(players, areaId, loadouts, mapName, difficulty)
 end
 
 return GameManager

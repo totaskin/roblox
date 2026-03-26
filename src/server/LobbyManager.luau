@@ -31,6 +31,16 @@ local PAD_SIGN_LABELS = {
 	[3] = "Random",
 }
 
+-- Difficulty settings per area (1=Easy, 2=Medium, 3=Hard)
+-- enemyMult: multiplier for enemy health
+-- rewardMult: multiplier for kill rewards
+-- startCoins: starting session coins
+local AREA_DIFFICULTY = {
+	[1] = { name = "Easy",   enemyMult = 1.0, rewardMult = 1.0, startCoins = 150 },
+	[2] = { name = "Medium", enemyMult = 1.5, rewardMult = 1.5, startCoins = 120 },
+	[3] = { name = "Hard",   enemyMult = 2.5, rewardMult = 2.5, startCoins = 100 },
+}
+
 -- AreaState type (per design.md)
 type AreaState = {
 	index: number,
@@ -74,6 +84,41 @@ local remotes: Folder
 -- Turret system state (Task 4.1)
 local playerUnlocks: { [number]: { [number]: boolean } } = {}
 local playerLoadouts: { [number]: { number } } = {}
+
+-- Leaderboard display references (for updating)
+local leaderboardGuis: { [string]: SurfaceGui } = {}
+
+-- Update leaderboard display panels with current data from DataManager
+local function updateLeaderboardDisplays()
+	for difficulty, surfaceGui in pairs(leaderboardGuis) do
+		local entries = DataManager.getLeaderboard(difficulty)
+		local entriesFrame = surfaceGui:FindFirstChild("Entries")
+		if not entriesFrame then continue end
+		
+		for i = 1, 10 do
+			local entryLabel = entriesFrame:FindFirstChild("Entry_" .. i)
+			if entryLabel then
+				local entry = entries[i]
+				if entry then
+					entryLabel.Text = i .. ". " .. entry.displayName .. " - Round " .. entry.round
+					-- Gold/silver/bronze colors for top 3
+					if i == 1 then
+						entryLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+					elseif i == 2 then
+						entryLabel.TextColor3 = Color3.fromRGB(192, 192, 192)
+					elseif i == 3 then
+						entryLabel.TextColor3 = Color3.fromRGB(205, 127, 50)
+					else
+						entryLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+					end
+				else
+					entryLabel.Text = i .. ". ---"
+					entryLabel.TextColor3 = Color3.fromRGB(100, 100, 100)
+				end
+			end
+		end
+	end
+end
 
 local LobbyManager = {}
 
@@ -178,6 +223,135 @@ local function buildPads()
 		wStrip.Material = Enum.Material.Neon
 		wStrip.Parent = Workspace
 	end
+
+	-- ── Weekly Leaderboards on Front Wall ─────────────────────────────────
+	-- Three leaderboard panels on the front wall (Z=40), one per difficulty
+	-- Positioned so players can see them while facing the pads
+	local leaderboardConfigs = {
+		{ difficulty = "Easy",   xPos = -55, color = Color3.fromRGB(100, 255, 100) },
+		{ difficulty = "Medium", xPos = 0,   color = Color3.fromRGB(255, 200, 50) },
+		{ difficulty = "Hard",   xPos = 55,  color = Color3.fromRGB(255, 80, 80) },
+	}
+	
+	for _, config in ipairs(leaderboardConfigs) do
+		-- Backing panel - placed just in front of the wall (wall is at Z=40, thickness 2)
+		local panel = Instance.new("Part")
+		panel.Name = "Leaderboard_" .. config.difficulty
+		panel.Size = Vector3.new(40, 50, 0.5)
+		panel.Position = Vector3.new(config.xPos, 35, 42)
+		panel.Anchored = true
+		panel.CanCollide = false
+		panel.Color = Color3.fromRGB(20, 20, 30)
+		panel.Material = Enum.Material.SmoothPlastic
+		panel.Parent = Workspace
+		
+		-- Neon border frame
+		local borderColor = config.color
+		local borders = {
+			{ size = Vector3.new(42, 1, 0.5), offset = Vector3.new(0, 25.5, -0.5) },  -- top
+			{ size = Vector3.new(42, 1, 0.5), offset = Vector3.new(0, -25.5, -0.5) }, -- bottom
+			{ size = Vector3.new(1, 50, 0.5), offset = Vector3.new(-20.5, 0, -0.5) }, -- left
+			{ size = Vector3.new(1, 50, 0.5), offset = Vector3.new(20.5, 0, -0.5) },  -- right
+		}
+		for bi, bd in ipairs(borders) do
+			local border = Instance.new("Part")
+			border.Name = "LeaderboardBorder_" .. config.difficulty .. "_" .. bi
+			border.Size = bd.size
+			border.Position = panel.Position + bd.offset
+			border.Anchored = true
+			border.CanCollide = false
+			border.Color = borderColor
+			border.Material = Enum.Material.Neon
+			border.Parent = Workspace
+		end
+		
+		-- Title bar
+		local titleBar = Instance.new("Part")
+		titleBar.Name = "LeaderboardTitle_" .. config.difficulty
+		titleBar.Size = Vector3.new(38, 8, 0.5)
+		titleBar.Position = panel.Position + Vector3.new(0, 21, -0.5)
+		titleBar.Anchored = true
+		titleBar.CanCollide = false
+		titleBar.Color = borderColor
+		titleBar.Material = Enum.Material.Neon
+		titleBar.Transparency = 0.3
+		titleBar.Parent = Workspace
+		
+		-- SurfaceGui for the leaderboard content
+		local surfaceGui = Instance.new("SurfaceGui")
+		surfaceGui.Name = "LeaderboardGui_" .. config.difficulty
+		surfaceGui.Face = Enum.NormalId.Back
+		surfaceGui.CanvasSize = Vector2.new(800, 1000)
+		surfaceGui.LightInfluence = 0
+		surfaceGui.Brightness = 1.5
+		surfaceGui.Parent = panel
+		
+		-- Title label
+		local titleLabel = Instance.new("TextLabel")
+		titleLabel.Name = "Title"
+		titleLabel.Size = UDim2.new(1, 0, 0.12, 0)
+		titleLabel.Position = UDim2.new(0, 0, 0, 0)
+		titleLabel.BackgroundTransparency = 1
+		titleLabel.Text = "🏆 " .. config.difficulty .. " - Weekly Top 10"
+		titleLabel.TextColor3 = borderColor
+		titleLabel.TextScaled = true
+		titleLabel.Font = Enum.Font.GothamBold
+		titleLabel.Parent = surfaceGui
+		
+		-- Entries container
+		local entriesFrame = Instance.new("Frame")
+		entriesFrame.Name = "Entries"
+		entriesFrame.Size = UDim2.new(1, 0, 0.85, 0)
+		entriesFrame.Position = UDim2.new(0, 0, 0.14, 0)
+		entriesFrame.BackgroundTransparency = 1
+		entriesFrame.Parent = surfaceGui
+		
+		-- Create 10 entry slots
+		for i = 1, 10 do
+			local entryLabel = Instance.new("TextLabel")
+			entryLabel.Name = "Entry_" .. i
+			entryLabel.Size = UDim2.new(1, 0, 0.1, 0)
+			entryLabel.Position = UDim2.new(0, 0, (i - 1) * 0.1, 0)
+			entryLabel.BackgroundTransparency = 1
+			entryLabel.Text = i .. ". ---"
+			entryLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+			entryLabel.TextScaled = true
+			entryLabel.Font = Enum.Font.Gotham
+			entryLabel.TextXAlignment = Enum.TextXAlignment.Left
+			entryLabel.Parent = entriesFrame
+		end
+		
+		-- Store reference for updates
+		leaderboardGuis[config.difficulty] = surfaceGui
+	end
+	
+	-- "WEEKLY LEADERBOARDS" header above all three
+	local headerPanel = Instance.new("Part")
+	headerPanel.Name = "LeaderboardHeader"
+	headerPanel.Size = Vector3.new(160, 10, 0.5)
+	headerPanel.Position = Vector3.new(0, 62, 42)
+	headerPanel.Anchored = true
+	headerPanel.CanCollide = false
+	headerPanel.Color = Color3.fromRGB(50, 50, 80)
+	headerPanel.Material = Enum.Material.Neon
+	headerPanel.Transparency = 0.5
+	headerPanel.Parent = Workspace
+	
+	local headerGui = Instance.new("SurfaceGui")
+	headerGui.Face = Enum.NormalId.Back
+	headerGui.CanvasSize = Vector2.new(800, 50)
+	headerGui.LightInfluence = 0
+	headerGui.Brightness = 2
+	headerGui.Parent = headerPanel
+	
+	local headerText = Instance.new("TextLabel")
+	headerText.Size = UDim2.new(1, 0, 1, 0)
+	headerText.BackgroundTransparency = 1
+	headerText.Text = "⭐ WEEKLY LEADERBOARDS ⭐"
+	headerText.TextColor3 = Color3.fromRGB(255, 220, 100)
+	headerText.TextScaled = true
+	headerText.Font = Enum.Font.FredokaOne
+	headerText.Parent = headerGui
 
 	-- Pastel corner pillars
 	local cornerPillars = {
@@ -481,15 +655,33 @@ local function buildPads()
 		surfaceGui.Brightness           = 1.5
 		surfaceGui.Parent               = panel
 
+		-- Build sign text with difficulty info
+		local difficulty = AREA_DIFFICULTY[i]
+		local mapLabel = PAD_SIGN_LABELS[i] or ("Area " .. i)
+		local diffLabel = difficulty and difficulty.name or ""
+		local rewardInfo = difficulty and string.format(" (%.0fx rewards)", difficulty.rewardMult) or ""
+
 		local signLabel = Instance.new("TextLabel")
 		signLabel.Name                   = "SignLabel"
-		signLabel.Size                   = UDim2.new(1, 0, 1, 0)
+		signLabel.Size                   = UDim2.new(1, 0, 0.6, 0)
 		signLabel.BackgroundTransparency = 1
-		signLabel.Text                   = PAD_SIGN_LABELS[i] or ("Area " .. i)
+		signLabel.Text                   = mapLabel
 		signLabel.TextColor3             = PAD_COLORS[i].Color
 		signLabel.TextScaled             = true
 		signLabel.Font                   = Enum.Font.Code
 		signLabel.Parent                 = surfaceGui
+
+		-- Difficulty sub-label
+		local difficultyLabel = Instance.new("TextLabel")
+		difficultyLabel.Name                   = "DifficultyLabel"
+		difficultyLabel.Size                   = UDim2.new(1, 0, 0.4, 0)
+		difficultyLabel.Position               = UDim2.new(0, 0, 0.6, 0)
+		difficultyLabel.BackgroundTransparency = 1
+		difficultyLabel.Text                   = diffLabel .. rewardInfo
+		difficultyLabel.TextColor3             = Color3.fromRGB(255, 255, 200)
+		difficultyLabel.TextScaled             = true
+		difficultyLabel.Font                   = Enum.Font.Gotham
+		difficultyLabel.Parent                 = surfaceGui
 
 		-- Spawn CFrame slightly above pad centre
 		local spawnCFrame = CFrame.new(pos + Vector3.new(0, 1 + FLOOR_SIZE.Y + SPAWN_Y_OFFSET, 0))
@@ -1642,7 +1834,9 @@ local function launchGame(areaIndex: number)
 	for _, player in ipairs(area.occupants) do
 		loadouts[player.UserId] = playerLoadouts[player.UserId]
 	end
-	local gm = GameManager.new(area.occupants, areaIndex, loadouts, mapName)
+	-- Get difficulty settings for this area
+	local difficulty = AREA_DIFFICULTY[areaIndex] or AREA_DIFFICULTY[1]
+	local gm = GameManager.new(area.occupants, areaIndex, loadouts, mapName, difficulty)
 	gm.init()
 	gm.onGameOver(function(roundReached)
 		onGameOver(areaIndex, roundReached)
@@ -1661,9 +1855,19 @@ onGameOver = function(areaIndex: number, roundReached: number)
 	area.status       = "RESULTS"
 	area.roundReached = roundReached
 
+	-- Submit leaderboard scores for all occupants
+	local difficulty = AREA_DIFFICULTY[areaIndex]
+	local difficultyName = difficulty and difficulty.name or "Easy"
 	for _, player in ipairs(area.occupants) do
+		DataManager.submitLeaderboardScore(player.UserId, player.DisplayName, difficultyName, roundReached)
 		remotes.LobbyShowResults:FireClient(player, roundReached, areaIndex)
 	end
+
+	-- Refresh leaderboards after a short delay to include new scores
+	task.delay(2, function()
+		DataManager.refreshLeaderboards()
+		updateLeaderboardDisplays()
+	end)
 
 	broadcastState()
 end
@@ -1891,7 +2095,7 @@ function LobbyManager.init()
 		"BuyTurret", "BuyTurretResult", "SetLoadout", "SetLoadoutResult",
 		"ShopUpdate", "SendLoadout", "PlaceTurret", "PlaceTurretResult", "TurretPlaced",
 		"UpgradeTurret", "UpgradeTurretResult", "TurretUpgraded",
-		"SessionCoinsUpdate", "KillEarningsUpdate", "TurretGameOver",
+		"SessionCoinsUpdate", "KillEarningsUpdate", "TurretGameOver", "TurretCostsUpdate",
 		-- Game remotes (pre-created so clients don't infinite-yield)
 		"WaveStarted", "WaveCleared", "Intermission", "GameOver",
 		"EnemyKilled", "BossDrop", "BaseDamaged", "MoneyUpdate",
@@ -1918,6 +2122,12 @@ function LobbyManager.init()
 	end
 
 	buildPads()
+
+	-- Initialize leaderboards: refresh data and update displays
+	DataManager.refreshLeaderboards()
+	task.delay(1, function()
+		updateLeaderboardDisplays()
+	end)
 
 	-- Create a SpawnLocation at the lobby so players don't drop from the sky
 	-- Face toward the pads (negative Z)

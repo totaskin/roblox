@@ -39,6 +39,9 @@ local turretIdCounter = 0
 local playerLoadouts: { [number]: { number } }? = nil
 local playerColors: { [number]: Color3 } = {}
 
+-- Track how many of each turret type have been placed (for escalating costs)
+local turretPlacementCounts: { [number]: number } = {}
+
 -- Callbacks for support tower effects (set by GameManager)
 local onSupportMoney: ((ownerId: number, amount: number) -> ())? = nil
 local onSupportHealth: ((amount: number) -> ())? = nil
@@ -485,6 +488,24 @@ local function buildTurretModel(position: Vector3, turretType: any, level: numbe
 	return model
 end
 
+-- Get the current placement cost for a turret type (escalates with each placement)
+-- Cost formula: baseCost + (baseCost * 0.5 * placementCount)
+-- e.g., base 50: 1st=50, 2nd=75, 3rd=100, 4th=125...
+function TurretManager.getPlacementCost(turretTypeId: number): number
+	local turretType = TurretData.getTurretById(turretTypeId)
+	if not turretType then
+		return 0
+	end
+	local baseCost = turretType.placementCost
+	local count = turretPlacementCounts[turretTypeId] or 0
+	return math.floor(baseCost + (baseCost * 0.5 * count))
+end
+
+-- Get placement counts for all turret types (for client sync)
+function TurretManager.getPlacementCounts(): { [number]: number }
+	return turretPlacementCounts
+end
+
 -- Task 6.2: Place a turret on the map
 function TurretManager.placeTurret(
 	userId: number,
@@ -509,8 +530,8 @@ function TurretManager.placeTurret(
 		return false, "Slot already occupied"
 	end
 
-	-- Validate player has sufficient session coins
-	local cost = turretType.placementCost
+	-- Validate player has sufficient session coins (use escalating cost)
+	local cost = TurretManager.getPlacementCost(turretTypeId)
 	if EconomyManager.getSessionCoins(userId) < cost then
 		return false, "Not enough coins"
 	end
@@ -520,6 +541,9 @@ function TurretManager.placeTurret(
 	if not spent then
 		return false, "Not enough coins"
 	end
+
+	-- Increment placement count for this turret type (for escalating costs)
+	turretPlacementCounts[turretTypeId] = (turretPlacementCounts[turretTypeId] or 0) + 1
 
 	-- Create TurretInstance at level 1 with base stats
 	local id = newTurretId()
@@ -690,6 +714,7 @@ function TurretManager.clearAll()
 	end
 	turrets = {}
 	playerColors = {}
+	turretPlacementCounts = {}
 end
 
 -- Task 7.1: Targeting logic — find closest enemy within turret range
@@ -723,6 +748,10 @@ local SHOOT_SOUNDS = {
 	"rbxassetid://9114127834",   -- splat
 }
 
+-- Performance: limit full particle effects to MAX_FULL_EFFECT_PROJECTILES at a time
+local MAX_FULL_EFFECT_PROJECTILES = 10
+local activeFullEffectCount = 0
+
 local function playShootSound(position: Vector3, overrideSoundId: string?)
 	local soundId = overrideSoundId or SHOOT_SOUNDS[math.random(1, #SHOOT_SOUNDS)]
 	local part = Instance.new("Part")
@@ -748,6 +777,7 @@ local function playShootSound(position: Vector3, overrideSoundId: string?)
 end
 
 -- Vibrant firing effect — scaled by rune count. runeColors is an optional list of Color3 from applied runes.
+-- Performance: uses simplified effects when too many projectiles are active
 local function fireProjectile(from: Vector3, to: Vector3, runeColors: { Color3 }?, shootSoundId: string?)
 	playShootSound(from, shootSoundId)
 
@@ -768,29 +798,37 @@ local function fireProjectile(from: Vector3, to: Vector3, runeColors: { Color3 }
 		then runeColors[math.random(1, #runeColors)]
 		else defaultColors[math.random(1, #defaultColors)]
 
-	-- Build splash palette from rune colors or defaults
-	local splashColors: { Color3 }
-	if runeColors and #runeColors > 0 then
-		splashColors = {}
-		for _, rc in ipairs(runeColors) do
-			table.insert(splashColors, rc)
-			-- Add a lighter tint variant
-			table.insert(splashColors, Color3.new(
-				math.min(rc.R + 0.3, 1),
-				math.min(rc.G + 0.3, 1),
-				math.min(rc.B + 0.3, 1)
-			))
-		end
-	else
-		splashColors = {
-			Color3.fromRGB(255, 50, 150),
-			Color3.fromRGB(0, 200, 255),
-			Color3.fromRGB(255, 220, 0),
-			Color3.fromRGB(100, 255, 80),
-		}
+	-- Check if we can use full effects (performance limiting)
+	local useFullEffects = activeFullEffectCount < MAX_FULL_EFFECT_PROJECTILES
+	if useFullEffects then
+		activeFullEffectCount += 1
 	end
 
-	-- Main projectile ball
+	-- Build splash palette from rune colors or defaults (only needed for full effects)
+	local splashColors: { Color3 }
+	if useFullEffects then
+		if runeColors and #runeColors > 0 then
+			splashColors = {}
+			for _, rc in ipairs(runeColors) do
+				table.insert(splashColors, rc)
+				-- Add a lighter tint variant
+				table.insert(splashColors, Color3.new(
+					math.min(rc.R + 0.3, 1),
+					math.min(rc.G + 0.3, 1),
+					math.min(rc.B + 0.3, 1)
+				))
+			end
+		else
+			splashColors = {
+				Color3.fromRGB(255, 50, 150),
+				Color3.fromRGB(0, 200, 255),
+				Color3.fromRGB(255, 220, 0),
+				Color3.fromRGB(100, 255, 80),
+			}
+		end
+	end
+
+	-- Main projectile ball (always shown)
 	local projSize = 0.35 * scale
 	local part = Instance.new("Part")
 	part.Size = Vector3.new(projSize, projSize, projSize)
@@ -802,9 +840,9 @@ local function fireProjectile(from: Vector3, to: Vector3, runeColors: { Color3 }
 	part.Material = Enum.Material.Neon
 	part.Parent = workspace
 
-	-- Glow aura (only if runes present)
+	-- Glow aura (only if runes present AND full effects)
 	local glow: Part? = nil
-	if runeCount > 0 then
+	if runeCount > 0 and useFullEffects then
 		glow = Instance.new("Part")
 		glow.Size = Vector3.new(projSize * 2, projSize * 2, projSize * 2)
 		glow.Position = from
@@ -836,9 +874,9 @@ local function fireProjectile(from: Vector3, to: Vector3, runeColors: { Color3 }
 
 	-- ── Impact explosion (scaled by runes) ──
 
-	-- Central flash
-	local flashBase = 0.8 * scale
-	local flashGrow = 4 * scale
+	-- Central flash (always shown, but smaller for simplified)
+	local flashBase = if useFullEffects then 0.8 * scale else 0.5 * scale
+	local flashGrow = if useFullEffects then 4 * scale else 2 * scale
 	local flash = Instance.new("Part")
 	flash.Size = Vector3.new(flashBase, flashBase, flashBase)
 	flash.Position = to
@@ -858,7 +896,16 @@ local function fireProjectile(from: Vector3, to: Vector3, runeColors: { Color3 }
 			flash.Transparency = t
 		end
 		flash:Destroy()
+		-- Decrement counter when full effect projectile finishes
+		if useFullEffects then
+			activeFullEffectCount -= 1
+		end
 	end)
+
+	-- Skip sparks, ring, and streaks for simplified effects
+	if not useFullEffects then
+		return
+	end
 
 	-- Sparks (count scales with runes: 6 base, +4 per rune)
 	local sparkCount = 6 + runeCount * 4

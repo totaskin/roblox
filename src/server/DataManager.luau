@@ -32,6 +32,138 @@ end
 
 local DataManager = {}
 
+-- Leaderboard DataStore (separate from player data)
+local leaderboardStore = nil
+local leaderboardNamesStore = nil
+
+local function getLeaderboardStore()
+	if not leaderboardStore then
+		leaderboardStore = DataStoreService:GetOrderedDataStore("WeeklyLeaderboard_v2")
+	end
+	return leaderboardStore
+end
+
+local function getLeaderboardNamesStore()
+	if not leaderboardNamesStore then
+		leaderboardNamesStore = DataStoreService:GetDataStore("LeaderboardNames")
+	end
+	return leaderboardNamesStore
+end
+
+-- In-memory leaderboard cache (refreshed periodically)
+local leaderboardCache: { [string]: { { userId: number, displayName: string, round: number } } } = {
+	Easy = {},
+	Medium = {},
+	Hard = {},
+}
+local lastLeaderboardRefresh = 0
+local LEADERBOARD_REFRESH_INTERVAL = 60 -- Refresh every 60 seconds
+
+-- Get the current week key (resets every Sunday)
+local function getWeekKey(): string
+	local now = os.time()
+	local date = os.date("*t", now)
+	-- Calculate days since epoch Sunday
+	local daysSinceEpoch = math.floor(now / 86400)
+	local weekNumber = math.floor((daysSinceEpoch + 4) / 7) -- Epoch was Thursday, so +4 to align to Sunday
+	return "Week_" .. weekNumber
+end
+
+-- Submit a score to the leaderboard
+function DataManager.submitLeaderboardScore(userId: number, displayName: string, difficulty: string, round: number)
+	local weekKey = getWeekKey()
+	local storeKey = weekKey .. "_" .. difficulty .. "_" .. tostring(userId)
+	
+	task.spawn(function()
+		-- Store the round number in OrderedDataStore (only accepts numbers)
+		local ok, err = pcall(function()
+			getLeaderboardStore():UpdateAsync(storeKey, function(oldValue)
+				local oldRound = oldValue or 0
+				if round > oldRound then
+					return round
+				end
+				return oldRound
+			end)
+		end)
+		if not ok then
+			warn("[DataManager] Failed to submit leaderboard score:", err)
+		end
+		
+		-- Store the display name separately in regular DataStore
+		local nameOk, nameErr = pcall(function()
+			getLeaderboardNamesStore():SetAsync("name_" .. tostring(userId), displayName)
+		end)
+		if not nameOk then
+			warn("[DataManager] Failed to save display name:", nameErr)
+		end
+	end)
+end
+
+-- Get leaderboard data (cached, refreshes periodically)
+function DataManager.getLeaderboard(difficulty: string): { { userId: number, displayName: string, round: number } }
+	local now = os.clock()
+	if now - lastLeaderboardRefresh > LEADERBOARD_REFRESH_INTERVAL then
+		DataManager.refreshLeaderboards()
+		lastLeaderboardRefresh = now
+	end
+	return leaderboardCache[difficulty] or {}
+end
+
+-- Refresh all leaderboards from DataStore
+function DataManager.refreshLeaderboards()
+	local weekKey = getWeekKey()
+	
+	for _, difficulty in ipairs({ "Easy", "Medium", "Hard" }) do
+		task.spawn(function()
+			local ok, result = pcall(function()
+				-- Get top 10 scores for this difficulty this week
+				local pages = getLeaderboardStore():GetSortedAsync(false, 100)
+				local entries: { { userId: number, displayName: string, round: number } } = {}
+				
+				local page = pages:GetCurrentPage()
+				for _, entry in ipairs(page) do
+					-- Key format: Week_X_Difficulty_UserId
+					local keyPattern = weekKey .. "_" .. difficulty .. "_(%d+)"
+					local userIdStr = string.match(entry.key, keyPattern)
+					if userIdStr then
+						local userId = tonumber(userIdStr)
+						local round = entry.value -- Now just a number
+						if userId and typeof(round) == "number" then
+							-- Try to get display name from names store
+							local displayName = "Player " .. userId
+							local nameOk, nameResult = pcall(function()
+								return getLeaderboardNamesStore():GetAsync("name_" .. tostring(userId))
+							end)
+							if nameOk and nameResult then
+								displayName = nameResult
+							end
+							
+							table.insert(entries, {
+								userId = userId,
+								displayName = displayName,
+								round = round,
+							})
+						end
+					end
+				end
+				
+				-- Sort by round descending and take top 10
+				table.sort(entries, function(a, b) return a.round > b.round end)
+				local top10 = {}
+				for i = 1, math.min(10, #entries) do
+					table.insert(top10, entries[i])
+				end
+				
+				leaderboardCache[difficulty] = top10
+			end)
+			
+			if not ok then
+				warn("[DataManager] Failed to refresh leaderboard for", difficulty, ":", result)
+			end
+		end)
+	end
+end
+
 -- Types
 export type PlayerData = {
 	version: number,

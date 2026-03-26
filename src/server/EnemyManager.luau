@@ -509,8 +509,8 @@ local function spawnEnemyModel(enemyData: any, startPos: Vector3): Model
 end
 
 
-function EnemyManager.spawnEnemy(enemyType: string, round: number)
-	local enemyData = WaveData.scaleEnemy(enemyType, round)
+function EnemyManager.spawnEnemy(enemyType: string, round: number, strengthMult: number?)
+	local enemyData = WaveData.scaleEnemy(enemyType, round, strengthMult)
 	local waypoints = getWaypoints()
 	if #waypoints == 0 then
 		warn("[EnemyManager] No waypoints found!")
