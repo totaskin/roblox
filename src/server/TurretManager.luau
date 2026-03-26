@@ -46,6 +46,45 @@ local onSupportHealth: ((amount: number) -> ())? = nil
 -- Callback to get turret runes (set by GameManager to avoid circular dep with RuneManager)
 local getTurretRunesCallback: ((turretInstanceId: string) -> { number })? = nil
 
+-- Load a turret model from ReplicatedStorage.TurretModels by name
+-- Returns cloned model if found, nil if not found
+local function loadTurretModel(turretName: string): Model?
+	local turretModels = game.ReplicatedStorage:FindFirstChild("TurretModels")
+	if not turretModels then
+		warn("[TurretManager] TurretModels folder not found in ReplicatedStorage")
+		return nil
+	end
+
+	local model = turretModels:FindFirstChild(turretName)
+	if not model then
+		warn("[TurretManager] Model not found for turret: " .. turretName)
+		return nil
+	end
+
+	-- Debug: check for attachments in source model before cloning
+	local attachmentCount = 0
+	for _, desc in ipairs(model:GetDescendants()) do
+		if desc:IsA("Attachment") then
+			attachmentCount += 1
+			print("[TurretManager] Source model has Attachment: " .. desc.Name .. " in " .. desc.Parent.Name)
+		end
+	end
+	print("[TurretManager] Source model '" .. turretName .. "' has " .. attachmentCount .. " Attachments")
+
+	return model:Clone()
+end
+
+-- Ensure the Turrets folder exists in Workspace
+local function ensureTurretsFolder(): Folder
+	local folder = workspace:FindFirstChild("Turrets")
+	if not folder then
+		folder = Instance.new("Folder")
+		folder.Name = "Turrets"
+		folder.Parent = workspace
+	end
+	return folder
+end
+
 local function newTurretId(): string
 	turretIdCounter += 1
 	return "turret_" .. turretIdCounter
@@ -114,10 +153,20 @@ end
 
 -- Internal helper: apply owner color to a turret model
 local function applyOwnerColor(model: Model, ownerColor: Color3, ownerName: string)
-	-- Set Body.Color if Body part exists, silently skip otherwise
+	-- Set Body.Color if Body part/model exists
 	local body = model:FindFirstChild("Body")
 	if body then
-		body.Color = ownerColor
+		-- If Body is a Part or MeshPart, set color directly
+		if body:IsA("BasePart") then
+			body.Color = ownerColor
+		-- If Body is a Model, color all BaseParts inside it
+		elseif body:IsA("Model") then
+			for _, part in ipairs(body:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.Color = ownerColor
+				end
+			end
+		end
 	end
 
 	-- Set OwnerColor attribute on the model
@@ -139,8 +188,90 @@ local function applyOwnerColor(model: Model, ownerColor: Color3, ownerName: stri
 	end
 end
 
--- Builds the turret model in workspace (distinct look from combo towers)
-local function buildTurretModel(position: Vector3, turretType: any, level: number, ownerColor: Color3?, ownerName: string?): Model
+-- Setup function for loaded models from ReplicatedStorage
+-- Positions model, sets attributes, applies owner color, adds GUI elements
+local function setupLoadedModel(
+	model: Model,
+	position: Vector3,
+	turretType: any,
+	level: number,
+	ownerColor: Color3?,
+	ownerName: string?
+)
+	-- Position the model using PrimaryPart CFrame, preserving original rotation
+	local base = model.PrimaryPart
+	if base then
+		local originalRotation = base.CFrame - base.CFrame.Position -- extract rotation only
+		model:SetPrimaryPartCFrame(originalRotation + position)
+		-- Ensure Base part has correct properties after placement
+		base.Anchored = true
+		base.CanCollide = true
+	else
+		warn("[TurretManager] Model missing PrimaryPart: " .. model.Name)
+	end
+
+	-- Set standard turret attributes
+	model:SetAttribute("TurretInstanceId", "")
+	model:SetAttribute("TurretTypeId", turretType.id)
+	model:SetAttribute("TurretLevel", level)
+	model:SetAttribute("TurretDamage", turretType.damage)
+	model:SetAttribute("TurretRange", turretType.range)
+	model:SetAttribute("TurretFireRate", turretType.fireRate)
+
+	-- BillboardGui showing level and upgrade info
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "TurretInfo"
+	billboard.Size = UDim2.new(0, 120, 0, 50)
+	billboard.StudsOffset = Vector3.new(0, 5.5, 0)
+	billboard.AlwaysOnTop = false
+	billboard.Adornee = base
+	billboard.Parent = model
+
+	local levelLabel = Instance.new("TextLabel")
+	levelLabel.Name = "LevelLabel"
+	levelLabel.Size = UDim2.new(1, 0, 0.5, 0)
+	levelLabel.BackgroundTransparency = 1
+	levelLabel.Text = turretType.name .. " Lv" .. level
+	levelLabel.TextColor3 = Color3.fromRGB(255, 220, 80)
+	levelLabel.TextScaled = true
+	levelLabel.Font = Enum.Font.GothamBold
+	levelLabel.Parent = billboard
+
+	local upgradeCost = turretType.placementCost * math.pow(2, level)
+	local upgradeLabel = Instance.new("TextLabel")
+	upgradeLabel.Name = "UpgradeLabel"
+	upgradeLabel.Size = UDim2.new(1, 0, 0.5, 0)
+	upgradeLabel.Position = UDim2.new(0, 0, 0.5, 0)
+	upgradeLabel.BackgroundTransparency = 1
+	upgradeLabel.Text = "Upgrade: 💰 " .. upgradeCost
+	upgradeLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+	upgradeLabel.TextScaled = true
+	upgradeLabel.Font = Enum.Font.Gotham
+	upgradeLabel.Parent = billboard
+
+	-- ProximityPrompt for client-side upgrade interaction
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "UpgradePrompt"
+	prompt.ActionText = "Upgrade 💰" .. upgradeCost
+	prompt.ObjectText = turretType.name .. " Lv" .. level
+	prompt.HoldDuration = 0
+	prompt.MaxActivationDistance = 12
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = base
+
+	-- Apply owner color to Body part if provided
+	if ownerColor then
+		applyOwnerColor(model, ownerColor, ownerName or "")
+	end
+
+	-- Parent model to Workspace.Turrets folder
+	local turretsFolder = ensureTurretsFolder()
+	model.Parent = turretsFolder
+end
+
+-- Builds a procedural turret model in workspace (distinct look from combo towers)
+-- Used as fallback when pre-made model not found in ReplicatedStorage
+local function buildProceduralModel(position: Vector3, turretType: any, level: number, ownerColor: Color3?, ownerName: string?): Model
 	local model = Instance.new("Model")
 	model.Name = turretType.name
 
@@ -333,6 +464,22 @@ local function buildTurretModel(position: Vector3, turretType: any, level: numbe
 	-- Apply owner color if provided
 	if ownerColor then
 		applyOwnerColor(model, ownerColor, ownerName or "")
+	end
+
+	return model
+end
+
+-- Builds a turret model, trying to load pre-made model first, falling back to procedural
+local function buildTurretModel(position: Vector3, turretType: any, level: number, ownerColor: Color3?, ownerName: string?): Model
+	-- Try to load pre-made model from ReplicatedStorage first
+	local model = loadTurretModel(turretType.name)
+
+	if model then
+		-- Use pre-made model with setup
+		setupLoadedModel(model, position, turretType, level, ownerColor, ownerName)
+	else
+		-- Fallback to procedural generation (existing code)
+		model = buildProceduralModel(position, turretType, level, ownerColor, ownerName)
 	end
 
 	return model
@@ -957,7 +1104,9 @@ function TurretManager.update(dt: number)
 	-- Tick support turrets
 	tickSupportTurrets(dt)
 
+	local turretCount = 0
 	for _, turret in pairs(turrets) do
+		turretCount += 1
 		local turretType = TurretData.getTurretById(turret.turretTypeId)
 
 		-- Skip support towers (already handled above)
@@ -968,16 +1117,86 @@ function TurretManager.update(dt: number)
 
 		local stats = turret.stats
 		local targetId, targetPos = findTarget(turret.position, stats.range)
+		
+		-- Debug: print once per turret
+		if not turret._debugTargetPrinted and turret.model then
+			turret._debugTargetPrinted = true
+			print("[TurretManager] Turret " .. turret.id .. " | Range: " .. stats.range .. " | Target: " .. tostring(targetId))
+		end
 
-		-- Rotate barrel to face target, offset so it stays outside the body
-		if targetId and targetPos and turret.model then
+		-- Rotate Head (or fallback to Body/Barrel) to face target
+		if turret.model then
 			local turretPos = turret.position
-			local barrelOrigin = turretPos + Vector3.new(0, 3, 0)
-			local barrel = turret.model:FindFirstChild("Barrel")
-			if barrel then
-				local lookCF = CFrame.lookAt(barrelOrigin, targetPos)
-				-- Push barrel 1.5 studs forward along its look direction so it doesn't clip inside
-				barrel.CFrame = lookCF + lookCF.LookVector * 1.5
+			
+			-- Look for Head model first (preferred structure)
+			local head = turret.model:FindFirstChild("Head")
+			if head and head:IsA("Model") then
+				-- Store original part offsets on first run
+				if not turret._headPartOffsets then
+					turret._headPartOffsets = {}
+					local headPivot = head:GetPivot()
+					
+					-- Store the original pivot position (fixed rotation center)
+					turret._pivotPosition = headPivot.Position
+					
+					-- Calculate the model's original facing angle (for offset correction)
+					local lookVector = headPivot.LookVector
+					turret._originalAngle = math.atan2(lookVector.X, lookVector.Z)
+					
+					for _, part in ipairs(head:GetDescendants()) do
+						if part:IsA("BasePart") then
+							-- Store offset from pivot and local rotation
+							local partCF = part.CFrame
+							local offset = headPivot:Inverse() * partCF
+							turret._headPartOffsets[part] = offset
+						end
+					end
+					turret._lastAngle = 0
+				end
+				
+				-- Only update angle if we have a target
+				if targetId and targetPos then
+					local pivotPos = turret._pivotPosition
+					local dx = targetPos.X - pivotPos.X
+					local dz = targetPos.Z - pivotPos.Z
+					-- Calculate target angle, adjusted by model's original facing direction
+					local targetAngle = math.atan2(dx, dz) - turret._originalAngle
+					
+					-- Smooth rotation (lerp towards target angle)
+					local currentAngle = turret._lastAngle or 0
+					local angleDiff = targetAngle - currentAngle
+					
+					-- Normalize angle difference to -PI to PI
+					while angleDiff > math.pi do angleDiff = angleDiff - 2 * math.pi end
+					while angleDiff < -math.pi do angleDiff = angleDiff + 2 * math.pi end
+					
+					-- Lerp speed (0.2 = smooth, 1.0 = instant)
+					local lerpSpeed = 0.15
+					turret._lastAngle = currentAngle + angleDiff * lerpSpeed
+				end
+				
+				-- Apply rotation (use stored pivot position)
+				local pivotPos = turret._pivotPosition
+				local rotatedPivot = CFrame.new(pivotPos) * CFrame.Angles(0, turret._lastAngle, 0)
+				
+				-- Apply stored offsets with new rotation
+				for part, offset in pairs(turret._headPartOffsets) do
+					if part and part.Parent then
+						part.CFrame = rotatedPivot * offset
+					end
+				end
+			elseif targetId and targetPos then
+				-- Fallback: rotate Barrel only (legacy/procedural models)
+				local barrel = turret.model:FindFirstChild("Barrel")
+				if barrel then
+					local barrelOrigin = turretPos + Vector3.new(0, 3, 0)
+					local lookCF = CFrame.lookAt(barrelOrigin, targetPos)
+					if barrel:IsA("Model") then
+						barrel:PivotTo(lookCF)
+					else
+						barrel.CFrame = lookCF
+					end
+				end
 			end
 		end
 
@@ -987,9 +1206,68 @@ function TurretManager.update(dt: number)
 		-- Set cooldown to 1 / fireRate
 		turret.cooldown = 1 / stats.fireRate
 
-		-- Fire from barrel tip
-		local barrel = turret.model and turret.model:FindFirstChild("Barrel")
-		local fireFrom = if barrel then barrel.Position + barrel.CFrame.LookVector * 1.0 else turret.position + Vector3.new(0, 3, 0)
+		-- Fire from MuzzlePoint attachment(s) - supports alternating dual barrels
+		local fireFrom: Vector3
+		
+		-- Find all MuzzlePoint attachments in Head (or Barrel as fallback)
+		local muzzlePoints: {Attachment} = {}
+		local head = turret.model and turret.model:FindFirstChild("Head")
+		if head then
+			for _, desc in ipairs(head:GetDescendants()) do
+				if desc:IsA("Attachment") and desc.Name:match("^MuzzlePoint") then
+					table.insert(muzzlePoints, desc)
+				end
+			end
+		end
+		
+		-- Fallback: check Barrel directly (legacy structure)
+		if #muzzlePoints == 0 then
+			local barrel = turret.model and turret.model:FindFirstChild("Barrel")
+			if barrel then
+				local muzzle = barrel:FindFirstChild("MuzzlePoint")
+				if muzzle and muzzle:IsA("Attachment") then
+					table.insert(muzzlePoints, muzzle)
+				end
+			end
+		end
+		
+		-- Debug: print muzzle points found (once per turret)
+		if not turret._debugMuzzlePrinted then
+			turret._debugMuzzlePrinted = true
+			print("[TurretManager] Turret " .. turret.id .. " found " .. #muzzlePoints .. " MuzzlePoints")
+			for i, mp in ipairs(muzzlePoints) do
+				print("  MuzzlePoint " .. i .. ": " .. mp.Name .. " at " .. tostring(mp.WorldPosition))
+			end
+			-- Debug: print all descendants of Head to see what's there
+			if head then
+				print("[TurretManager] Head descendants:")
+				for _, desc in ipairs(head:GetDescendants()) do
+					print("  " .. desc.ClassName .. ": " .. desc.Name)
+				end
+			else
+				print("[TurretManager] No Head found in model")
+			end
+		end
+		
+		if #muzzlePoints > 0 then
+			-- Initialize muzzle index if not set
+			if not turret._lastMuzzleIndex then
+				turret._lastMuzzleIndex = 0
+			end
+			-- Alternate to next muzzle (1-2-1-2 pattern)
+			turret._lastMuzzleIndex = (turret._lastMuzzleIndex % #muzzlePoints) + 1
+			fireFrom = muzzlePoints[turret._lastMuzzleIndex].WorldPosition
+		else
+			-- Fallback: no muzzle points found, calculate from barrel or turret position
+			local barrel = turret.model and turret.model:FindFirstChild("Barrel")
+			if barrel then
+				local barrelCF = if barrel:IsA("Model") then barrel:GetPivot() else barrel.CFrame
+				local barrelPos = if barrel:IsA("Model") then barrel:GetPivot().Position else barrel.Position
+				fireFrom = barrelPos + barrelCF.LookVector * 1.0
+			else
+				fireFrom = turret.position + Vector3.new(0, 3, 0)
+			end
+		end
 
 		-- Gather rune colors for this turret's applied runes
 		local runeColors: { Color3 }? = nil

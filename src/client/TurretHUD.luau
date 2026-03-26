@@ -1056,9 +1056,9 @@ local function startRenderLoop()
 			end
 			selectedSlot = { gridX = gx, gridZ = gz, worldPos = pos }
 			if pos then updateGhostPosition(pos) end
-		else
-			selectedSlot = nil
 		end
+		-- Don't clear selectedSlot when moving away - keep last valid slot
+		-- so clicking anywhere confirms placement at that position
 
 		lastHoveredKey = key
 	end)

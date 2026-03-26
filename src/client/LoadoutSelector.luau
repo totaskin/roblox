@@ -532,7 +532,7 @@ function LoadoutSelector.init()
 		end
 	end
 
-	tryAutoFill()
+	-- Don't auto-fill immediately - wait for server to send saved loadout first
 	refreshSlots()
 	refreshStatus()
 
@@ -572,6 +572,9 @@ function LoadoutSelector.init()
 					loadout = serverLoadout
 					refreshSlots()
 					refreshStatus()
+				else
+					-- No saved loadout from server, try auto-fill
+					tryAutoFill()
 				end
 			end)
 		end
@@ -595,10 +598,13 @@ function LoadoutSelector.init()
 					end
 				end
 
-				tryAutoFill()
-				if changed then
+				-- Only try auto-fill if loadout is now empty after removing invalid entries
+				if #loadout == 0 then
+					tryAutoFill()
+				elseif changed then
 					refreshSlots()
 					refreshStatus()
+					fireSetLoadout()
 				end
 				-- Refresh picker if open
 				if editingSlot then
