@@ -482,35 +482,49 @@ local function buildUI(): ScreenGui
 	coinCorner.CornerRadius = UDim.new(0, 6)
 	coinCorner.Parent = coinLabel
 
-	-- Loadout buttons container (bottom center)
+	-- Loadout buttons container (bottom center) - responsive sizing
 	local loadoutBar = Instance.new("Frame")
 	loadoutBar.Name = "LoadoutBar"
-	loadoutBar.Size = UDim2.new(0, 420, 0, 70)
-	loadoutBar.Position = UDim2.new(0.5, -210, 1, -155)
+	loadoutBar.Size = UDim2.new(0.35, 0, 0.09, 0) -- 35% width, 9% height
+	loadoutBar.Position = UDim2.new(0.5, 0, 1, -10) -- Centered, 10px from bottom
+	loadoutBar.AnchorPoint = Vector2.new(0.5, 1) -- Anchor at bottom center
 	loadoutBar.BackgroundColor3 = Color3.fromRGB(15, 15, 30)
 	loadoutBar.BackgroundTransparency = 0.3
 	loadoutBar.BorderSizePixel = 0
 	loadoutBar.Parent = screen
 
+	-- Constrain min/max size for very small or very large screens
+	local barSizeConstraint = Instance.new("UISizeConstraint")
+	barSizeConstraint.MinSize = Vector2.new(320, 60)
+	barSizeConstraint.MaxSize = Vector2.new(600, 100)
+	barSizeConstraint.Parent = loadoutBar
+
 	local barCorner = Instance.new("UICorner")
-	barCorner.CornerRadius = UDim.new(0, 8)
+	barCorner.CornerRadius = UDim.new(0.1, 0)
 	barCorner.Parent = loadoutBar
+
+	local barPadding = Instance.new("UIPadding")
+	barPadding.PaddingLeft = UDim.new(0.02, 0)
+	barPadding.PaddingRight = UDim.new(0.02, 0)
+	barPadding.PaddingTop = UDim.new(0.1, 0)
+	barPadding.PaddingBottom = UDim.new(0.1, 0)
+	barPadding.Parent = loadoutBar
 
 	local barLayout = Instance.new("UIListLayout")
 	barLayout.FillDirection = Enum.FillDirection.Horizontal
-	barLayout.Padding = UDim.new(0, 8)
+	barLayout.Padding = UDim.new(0.02, 0)
 	barLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	barLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 	barLayout.Parent = loadoutBar
 
-	-- 3 loadout turret buttons
+	-- 3 loadout turret buttons - responsive sizing
 	for i = 1, 3 do
 		local turretId = loadout[i]
 		local turret = TurretData.getTurretById(turretId)
 
 		local btn = Instance.new("TextButton")
 		btn.Name = "Loadout_" .. i
-		btn.Size = UDim2.new(0, 125, 0, 56)
+		btn.Size = UDim2.new(0.3, 0, 1, 0) -- 30% of bar width, full height
 		btn.BackgroundColor3 = Color3.fromRGB(40, 60, 100)
 		btn.BorderSizePixel = 0
 		btn.Text = ""
@@ -521,13 +535,13 @@ local function buildUI(): ScreenGui
 		btn.Parent = loadoutBar
 
 		local btnCorner = Instance.new("UICorner")
-		btnCorner.CornerRadius = UDim.new(0, 6)
+		btnCorner.CornerRadius = UDim.new(0.1, 0)
 		btnCorner.Parent = btn
 
 		-- Name label (top portion)
 		local nameLbl = Instance.new("TextLabel")
 		nameLbl.Name = "NameLabel"
-		nameLbl.Size = UDim2.new(1, -4, 0, 32)
+		nameLbl.Size = UDim2.new(1, -4, 0.6, 0)
 		nameLbl.Position = UDim2.new(0, 2, 0, 2)
 		nameLbl.BackgroundTransparency = 1
 		nameLbl.Text = turret and turret.name or "Empty"
@@ -539,8 +553,8 @@ local function buildUI(): ScreenGui
 		-- Cost sublabel (bottom portion)
 		local costLbl = Instance.new("TextLabel")
 		costLbl.Name = "Cost"
-		costLbl.Size = UDim2.new(1, -4, 0, 16)
-		costLbl.Position = UDim2.new(0, 2, 0, 36)
+		costLbl.Size = UDim2.new(1, -4, 0.35, 0)
+		costLbl.Position = UDim2.new(0, 2, 0.6, 0)
 		costLbl.BackgroundTransparency = 1
 		costLbl.Text = turret and ("💰 " .. turret.placementCost) or ""
 		costLbl.TextColor3 = Color3.fromRGB(255, 220, 100)

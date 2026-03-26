@@ -1992,70 +1992,60 @@ local function onPlayerDismissed(player: Player, areaIndex: number)
 	local area = areas[areaIndex]
 	area.dismissedPlayers[player] = true
 
-	-- Check if all occupants have dismissed
-	local allDismissed = true
-	for _, occ in ipairs(area.occupants) do
-		if not area.dismissedPlayers[occ] then
-			allDismissed = false
+	-- Immediately teleport THIS player back to lobby
+	local char = player.Character
+	if char then
+		local root = char:FindFirstChild("HumanoidRootPart")
+		if root then
+			root.CFrame = LOBBY_SPAWN
+		end
+	end
+
+	-- Send updated persistent coin balance + unlocks to this player
+	local uid = player.UserId
+	DataManager.savePlayer(uid)
+	local coins = EconomyManager.getPersistentCoins(uid)
+	local unlocksForPlayer = playerUnlocks[uid] or { [1] = true }
+	local unlockArray = {}
+	for id, val in pairs(unlocksForPlayer) do
+		if val then table.insert(unlockArray, id) end
+	end
+	remotes.ShopUpdate:FireClient(player, unlockArray, coins)
+	local runeInv = RuneManager.getInventory(uid)
+	remotes.RuneInventoryUpdate:FireClient(player, runeInv)
+
+	-- Remove this player from occupants
+	for i, occ in ipairs(area.occupants) do
+		if occ == player then
+			table.remove(area.occupants, i)
 			break
 		end
 	end
 
-	if not allDismissed then return end
-
-	-- Teleport all occupants back to lobby spawn
-	for _, occ in ipairs(area.occupants) do
-		local char = occ.Character
-		if char then
-			local root = char:FindFirstChild("HumanoidRootPart")
-			if root then
-				root.CFrame = LOBBY_SPAWN
-			end
+	-- Check if all occupants have now left (area should reset)
+	if #area.occupants == 0 then
+		-- Stop the game manager if it exists
+		if area.gameManager then
+			area.gameManager.stop()
 		end
-	end
 
-	-- Send updated persistent coin balance + unlocks to each player so the shop reflects banked earnings
-	-- Also send rune inventory so the lobby rune display is up to date
-	-- Save player data to persist runes earned during the game
-	for _, occ in ipairs(area.occupants) do
-		local uid = occ.UserId
-		-- Save data immediately so runes are persisted
-		DataManager.savePlayer(uid)
-		
-		local coins = EconomyManager.getPersistentCoins(uid)
-		local unlocksForPlayer = playerUnlocks[uid] or { [1] = true }
-		-- Send unlocks as flat array to avoid Roblox sparse-table serialization issues
-		local unlockArray = {}
-		for id, val in pairs(unlocksForPlayer) do
-			if val then table.insert(unlockArray, id) end
+		-- Remove the game map visuals so the lobby stays clean
+		local mapFolder = Workspace:FindFirstChild("GameMap_" .. areaIndex)
+		if mapFolder then
+			mapFolder:Destroy()
 		end
-		remotes.ShopUpdate:FireClient(occ, unlockArray, coins)
-		local runeInv = RuneManager.getInventory(uid)
-		print("[LobbyManager] Sending rune inventory to", occ.Name, ":", runeInv)
-		remotes.RuneInventoryUpdate:FireClient(occ, runeInv)
+
+		-- Reset area
+		area.status              = "EMPTY"
+		area.occupants           = {}
+		area.countdownRemaining  = 0
+		area.gameManager         = nil
+		area.roundReached        = 0
+		area.countdownGeneration += 1
+		area.dismissedPlayers    = {}
+
+		broadcastState()
 	end
-
-	-- Stop the game manager if it exists
-	if area.gameManager then
-		area.gameManager.stop()
-	end
-
-	-- Remove the game map visuals so the lobby stays clean
-	local mapVisuals = Workspace:FindFirstChild("MapVisuals")
-	if mapVisuals then
-		mapVisuals:Destroy()
-	end
-
-	-- Reset area
-	area.status              = "EMPTY"
-	area.occupants           = {}
-	area.countdownRemaining  = 0
-	area.gameManager         = nil
-	area.roundReached        = 0
-	area.dismissedPlayers    = {}
-	area.countdownGeneration += 1
-
-	broadcastState()
 end
 
 function LobbyManager.setPlayerUnlocks(userId: number, unlocks: { [number]: boolean })

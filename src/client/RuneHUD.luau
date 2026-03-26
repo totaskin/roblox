@@ -121,12 +121,19 @@ end
 local function buildInventoryBar(parent: ScreenGui): Frame
 	local bar = Instance.new("Frame")
 	bar.Name = "RuneInventoryBar"
-	bar.Size = UDim2.new(0, 44, 0, 380)
-	bar.Position = UDim2.new(1, -52, 0.5, -190)
+	bar.Size = UDim2.new(0.035, 0, 0.48, 0) -- 3.5% width, 48% height
+	bar.Position = UDim2.new(1, -8, 0.5, 0)
+	bar.AnchorPoint = Vector2.new(1, 0.5) -- Anchor to right edge, vertically centered
 	bar.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
 	bar.BackgroundTransparency = 0.3
 	bar.BorderSizePixel = 0
 	bar.Parent = parent
+
+	-- Constrain min/max size
+	local barSizeConstraint = Instance.new("UISizeConstraint")
+	barSizeConstraint.MinSize = Vector2.new(40, 340)
+	barSizeConstraint.MaxSize = Vector2.new(60, 480)
+	barSizeConstraint.Parent = bar
 
 	local barCorner = Instance.new("UICorner")
 	barCorner.CornerRadius = UDim.new(0, 8)
@@ -134,14 +141,14 @@ local function buildInventoryBar(parent: ScreenGui): Frame
 
 	local layout = Instance.new("UIListLayout")
 	layout.FillDirection = Enum.FillDirection.Vertical
-	layout.Padding = UDim.new(0, 2)
+	layout.Padding = UDim.new(0.005, 0)
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	layout.VerticalAlignment = Enum.VerticalAlignment.Center
 	layout.Parent = bar
 
 	local padding = Instance.new("UIPadding")
-	padding.PaddingTop = UDim.new(0, 4)
-	padding.PaddingBottom = UDim.new(0, 4)
+	padding.PaddingTop = UDim.new(0.01, 0)
+	padding.PaddingBottom = UDim.new(0.01, 0)
 	padding.Parent = bar
 
 	for i = 1, 10 do
@@ -149,14 +156,14 @@ local function buildInventoryBar(parent: ScreenGui): Frame
 
 		local slot = Instance.new("Frame")
 		slot.Name = "RuneSlot_" .. i
-		slot.Size = UDim2.new(0, 36, 0, 36)
+		slot.Size = UDim2.new(0.85, 0, 0.09, 0) -- 85% of bar width, 9% of bar height
 		slot.BackgroundColor3 = res.color
 		slot.BackgroundTransparency = 0.2
 		slot.BorderSizePixel = 0
 		slot.Parent = bar
 
 		local corner = Instance.new("UICorner")
-		corner.CornerRadius = UDim.new(0, 6)
+		corner.CornerRadius = UDim.new(0.15, 0)
 		corner.Parent = slot
 
 		-- Short 1-2 letter abbreviation instead of full name
@@ -185,11 +192,12 @@ local function buildInventoryBar(parent: ScreenGui): Frame
 		inventorySlots[i] = { frame = slot, countLabel = countLabel }
 	end
 
-	-- Task 8.3: Shop button below inventory bar (accessible during gameplay)
+	-- Task 8.3: Shop button below inventory bar (accessible during gameplay) - responsive
 	local shopBtn = Instance.new("TextButton")
 	shopBtn.Name = "RuneShopBtn"
-	shopBtn.Size = UDim2.new(0, 44, 0, 36)
-	shopBtn.Position = UDim2.new(1, -52, 0.5, 200)
+	shopBtn.Size = UDim2.new(0.035, 0, 0.045, 0) -- 3.5% width, 4.5% height
+	shopBtn.Position = UDim2.new(1, -8, 0.5, 0)
+	shopBtn.AnchorPoint = Vector2.new(1, -5.5) -- Position below the bar
 	shopBtn.BackgroundColor3 = Color3.fromRGB(80, 50, 160)
 	shopBtn.BorderSizePixel = 0
 	shopBtn.Text = "🔮"
@@ -198,8 +206,14 @@ local function buildInventoryBar(parent: ScreenGui): Frame
 	shopBtn.Font = Enum.Font.GothamBold
 	shopBtn.Parent = parent
 
+	-- Constrain shop button size
+	local shopBtnSizeConstraint = Instance.new("UISizeConstraint")
+	shopBtnSizeConstraint.MinSize = Vector2.new(40, 32)
+	shopBtnSizeConstraint.MaxSize = Vector2.new(60, 50)
+	shopBtnSizeConstraint.Parent = shopBtn
+
 	local shopBtnCorner = Instance.new("UICorner")
-	shopBtnCorner.CornerRadius = UDim.new(0, 8)
+	shopBtnCorner.CornerRadius = UDim.new(0.15, 0)
 	shopBtnCorner.Parent = shopBtn
 
 	shopBtn.MouseButton1Click:Connect(function()
@@ -215,23 +229,30 @@ end
 local function buildRunePanel(parent: ScreenGui): Frame
 	local panel = Instance.new("Frame")
 	panel.Name = "RunePanel"
-	panel.Size = UDim2.new(0, 260, 0, 480)
-	panel.Position = UDim2.new(0, 10, 0.5, -240)
+	panel.Size = UDim2.new(0.18, 0, 0.6, 0) -- 18% width, 60% height
+	panel.Position = UDim2.new(0, 10, 0.5, 0)
+	panel.AnchorPoint = Vector2.new(0, 0.5) -- Anchor to left edge, vertically centered
 	panel.BackgroundColor3 = Color3.fromRGB(15, 15, 30)
 	panel.BackgroundTransparency = 0.1
 	panel.BorderSizePixel = 0
 	panel.Visible = false
 	panel.Parent = parent
 
+	-- Constrain min/max size
+	local panelSizeConstraint = Instance.new("UISizeConstraint")
+	panelSizeConstraint.MinSize = Vector2.new(220, 400)
+	panelSizeConstraint.MaxSize = Vector2.new(320, 600)
+	panelSizeConstraint.Parent = panel
+
 	local panelCorner = Instance.new("UICorner")
 	panelCorner.CornerRadius = UDim.new(0, 8)
 	panelCorner.Parent = panel
 
-	-- Title label
+	-- Title label - responsive
 	panelTurretLabel = Instance.new("TextLabel")
 	panelTurretLabel.Name = "TurretLabel"
-	panelTurretLabel.Size = UDim2.new(1, -10, 0, 28)
-	panelTurretLabel.Position = UDim2.new(0, 5, 0, 5)
+	panelTurretLabel.Size = UDim2.new(1, -10, 0.06, 0) -- 6% of panel height
+	panelTurretLabel.Position = UDim2.new(0, 5, 0.01, 0)
 	panelTurretLabel.BackgroundTransparency = 1
 	panelTurretLabel.Text = "Apply Runes"
 	panelTurretLabel.TextColor3 = Color3.fromRGB(255, 220, 80)
@@ -239,11 +260,11 @@ local function buildRunePanel(parent: ScreenGui): Frame
 	panelTurretLabel.Font = Enum.Font.GothamBold
 	panelTurretLabel.Parent = panel
 
-	-- Current runes label
+	-- Current runes label - responsive
 	panelCurrentRunesLabel = Instance.new("TextLabel")
 	panelCurrentRunesLabel.Name = "CurrentRunesLabel"
-	panelCurrentRunesLabel.Size = UDim2.new(1, -10, 0, 22)
-	panelCurrentRunesLabel.Position = UDim2.new(0, 5, 0, 36)
+	panelCurrentRunesLabel.Size = UDim2.new(1, -10, 0.05, 0) -- 5% of panel height
+	panelCurrentRunesLabel.Position = UDim2.new(0, 5, 0.075, 0)
 	panelCurrentRunesLabel.BackgroundTransparency = 1
 	panelCurrentRunesLabel.Text = "Runes: None"
 	panelCurrentRunesLabel.TextColor3 = Color3.fromRGB(200, 180, 255)
@@ -251,11 +272,11 @@ local function buildRunePanel(parent: ScreenGui): Frame
 	panelCurrentRunesLabel.Font = Enum.Font.Gotham
 	panelCurrentRunesLabel.Parent = panel
 
-	-- Stat preview label
+	-- Stat preview label - responsive
 	panelStatPreviewLabel = Instance.new("TextLabel")
 	panelStatPreviewLabel.Name = "StatPreviewLabel"
-	panelStatPreviewLabel.Size = UDim2.new(1, -10, 0, 22)
-	panelStatPreviewLabel.Position = UDim2.new(0, 5, 0, 60)
+	panelStatPreviewLabel.Size = UDim2.new(1, -10, 0.05, 0) -- 5% of panel height
+	panelStatPreviewLabel.Position = UDim2.new(0, 5, 0.125, 0)
 	panelStatPreviewLabel.BackgroundTransparency = 1
 	panelStatPreviewLabel.Text = "No runes applied"
 	panelStatPreviewLabel.TextColor3 = Color3.fromRGB(130, 200, 255)
@@ -263,17 +284,17 @@ local function buildRunePanel(parent: ScreenGui): Frame
 	panelStatPreviewLabel.Font = Enum.Font.Gotham
 	panelStatPreviewLabel.Parent = panel
 
-	-- Rune buttons container
+	-- Rune buttons container - responsive
 	local buttonContainer = Instance.new("Frame")
 	buttonContainer.Name = "ButtonContainer"
-	buttonContainer.Size = UDim2.new(1, -10, 0, 370)
-	buttonContainer.Position = UDim2.new(0, 5, 0, 90)
+	buttonContainer.Size = UDim2.new(1, -10, 0.77, 0) -- 77% of panel height
+	buttonContainer.Position = UDim2.new(0, 5, 0.19, 0)
 	buttonContainer.BackgroundTransparency = 1
 	buttonContainer.Parent = panel
 
 	local btnLayout = Instance.new("UIListLayout")
 	btnLayout.FillDirection = Enum.FillDirection.Vertical
-	btnLayout.Padding = UDim.new(0, 3)
+	btnLayout.Padding = UDim.new(0.008, 0)
 	btnLayout.Parent = buttonContainer
 
 	for i = 1, 10 do
@@ -281,7 +302,7 @@ local function buildRunePanel(parent: ScreenGui): Frame
 
 		local btn = Instance.new("TextButton")
 		btn.Name = "RuneBtn_" .. i
-		btn.Size = UDim2.new(1, 0, 0, 34)
+		btn.Size = UDim2.new(1, 0, 0.095, 0) -- ~9.5% of container height each
 		btn.BackgroundColor3 = res.color
 		btn.BorderSizePixel = 0
 		btn.Text = ""
@@ -289,7 +310,7 @@ local function buildRunePanel(parent: ScreenGui): Frame
 		btn.Parent = buttonContainer
 
 		local btnCorner = Instance.new("UICorner")
-		btnCorner.CornerRadius = UDim.new(0, 4)
+		btnCorner.CornerRadius = UDim.new(0.12, 0)
 		btnCorner.Parent = btn
 
 		local nameLabel = Instance.new("TextLabel")
@@ -333,11 +354,12 @@ local function buildRunePanel(parent: ScreenGui): Frame
 		end)
 	end
 
-	-- Close button
+	-- Close button - responsive
 	local closeBtn = Instance.new("TextButton")
 	closeBtn.Name = "CloseBtn"
-	closeBtn.Size = UDim2.new(0, 28, 0, 28)
-	closeBtn.Position = UDim2.new(1, -32, 0, 4)
+	closeBtn.Size = UDim2.new(0.12, 0, 0.06, 0) -- 12% width, 6% height of panel
+	closeBtn.Position = UDim2.new(1, -4, 0, 4)
+	closeBtn.AnchorPoint = Vector2.new(1, 0)
 	closeBtn.BackgroundColor3 = Color3.fromRGB(160, 50, 50)
 	closeBtn.BorderSizePixel = 0
 	closeBtn.Text = "X"
@@ -347,18 +369,19 @@ local function buildRunePanel(parent: ScreenGui): Frame
 	closeBtn.Parent = panel
 
 	local closeBtnCorner = Instance.new("UICorner")
-	closeBtnCorner.CornerRadius = UDim.new(0, 4)
+	closeBtnCorner.CornerRadius = UDim.new(0.15, 0)
 	closeBtnCorner.Parent = closeBtn
 
 	closeBtn.MouseButton1Click:Connect(function()
 		RuneHUD.hideRunePanel()
 	end)
 
-	-- Error label (below panel)
+	-- Error label (below panel) - responsive
 	errorLabel = Instance.new("TextLabel")
 	errorLabel.Name = "RuneErrorMsg"
-	errorLabel.Size = UDim2.new(0, 260, 0, 28)
-	errorLabel.Position = UDim2.new(1, -270, 0.5, 248)
+	errorLabel.Size = UDim2.new(0.18, 0, 0.035, 0) -- 18% width, 3.5% height
+	errorLabel.Position = UDim2.new(0, 10, 0.5, 0)
+	errorLabel.AnchorPoint = Vector2.new(0, -9) -- Position below panel
 	errorLabel.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
 	errorLabel.BackgroundTransparency = 0.2
 	errorLabel.BorderSizePixel = 0
@@ -369,8 +392,14 @@ local function buildRunePanel(parent: ScreenGui): Frame
 	errorLabel.Visible = false
 	errorLabel.Parent = parent
 
+	-- Constrain error label size
+	local errSizeConstraint = Instance.new("UISizeConstraint")
+	errSizeConstraint.MinSize = Vector2.new(220, 24)
+	errSizeConstraint.MaxSize = Vector2.new(320, 36)
+	errSizeConstraint.Parent = errorLabel
+
 	local errCorner = Instance.new("UICorner")
-	errCorner.CornerRadius = UDim.new(0, 6)
+	errCorner.CornerRadius = UDim.new(0.15, 0)
 	errCorner.Parent = errorLabel
 
 	return panel

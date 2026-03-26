@@ -76,24 +76,31 @@ local function buildShopUI(): ScreenGui
 	screen.ResetOnSpawn = false
 	screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-	-- Main container (right side of screen)
+	-- Main container (right side of screen) - responsive sizing
 	local container = Instance.new("Frame")
 	container.Name = "ShopContainer"
-	container.Size = UDim2.new(0, 300, 0, 450)
-	container.Position = UDim2.new(1, -310, 0, 112)
+	container.Size = UDim2.new(0.22, 0, 0.55, 0) -- 22% width, 55% height
+	container.Position = UDim2.new(1, -10, 0, 112)
+	container.AnchorPoint = Vector2.new(1, 0) -- Anchor to right edge
 	container.BackgroundColor3 = Color3.fromRGB(15, 15, 30)
 	container.BackgroundTransparency = 0.1
 	container.BorderSizePixel = 0
 	container.Parent = screen
 
+	-- Constrain min/max size for very small or very large screens
+	local containerSizeConstraint = Instance.new("UISizeConstraint")
+	containerSizeConstraint.MinSize = Vector2.new(260, 380)
+	containerSizeConstraint.MaxSize = Vector2.new(400, 600)
+	containerSizeConstraint.Parent = container
+
 	local containerCorner = Instance.new("UICorner")
 	containerCorner.CornerRadius = UDim.new(0, 8)
 	containerCorner.Parent = container
 
-	-- Header
+	-- Header - responsive height
 	local header = Instance.new("TextLabel")
 	header.Name = "Header"
-	header.Size = UDim2.new(1, 0, 0, 36)
+	header.Size = UDim2.new(1, 0, 0.08, 0) -- 8% of container height
 	header.BackgroundColor3 = Color3.fromRGB(30, 30, 60)
 	header.BackgroundTransparency = 0.2
 	header.BorderSizePixel = 0
@@ -107,11 +114,11 @@ local function buildShopUI(): ScreenGui
 	headerCorner.CornerRadius = UDim.new(0, 8)
 	headerCorner.Parent = header
 
-	-- Coin display
+	-- Coin display - responsive positioning
 	coinLabel = Instance.new("TextLabel")
 	coinLabel.Name = "CoinBalance"
-	coinLabel.Size = UDim2.new(1, 0, 0, 24)
-	coinLabel.Position = UDim2.new(0, 0, 0, 36)
+	coinLabel.Size = UDim2.new(1, 0, 0.055, 0) -- 5.5% of container height
+	coinLabel.Position = UDim2.new(0, 0, 0.08, 0) -- Below header
 	coinLabel.BackgroundTransparency = 1
 	coinLabel.Text = "💰 " .. persistentCoins
 	coinLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
@@ -119,11 +126,11 @@ local function buildShopUI(): ScreenGui
 	coinLabel.Font = Enum.Font.GothamBold
 	coinLabel.Parent = container
 
-	-- Message label (for errors / success)
+	-- Message label (for errors / success) - responsive positioning
 	messageLabel = Instance.new("TextLabel")
 	messageLabel.Name = "Message"
-	messageLabel.Size = UDim2.new(1, -10, 0, 20)
-	messageLabel.Position = UDim2.new(0, 5, 0, 60)
+	messageLabel.Size = UDim2.new(1, -10, 0.045, 0) -- 4.5% of container height
+	messageLabel.Position = UDim2.new(0, 5, 0.135, 0) -- Below coin display
 	messageLabel.BackgroundTransparency = 1
 	messageLabel.Text = ""
 	messageLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
@@ -132,11 +139,11 @@ local function buildShopUI(): ScreenGui
 	messageLabel.Visible = false
 	messageLabel.Parent = container
 
-	-- Scrolling frame for turret list
+	-- Scrolling frame for turret list - responsive sizing
 	local scrollFrame = Instance.new("ScrollingFrame")
 	scrollFrame.Name = "TurretList"
-	scrollFrame.Size = UDim2.new(1, -10, 1, -90)
-	scrollFrame.Position = UDim2.new(0, 5, 0, 82)
+	scrollFrame.Size = UDim2.new(1, -10, 0.8, 0) -- 80% of container height
+	scrollFrame.Position = UDim2.new(0, 5, 0.18, 0) -- Below message area
 	scrollFrame.BackgroundTransparency = 1
 	scrollFrame.BorderSizePixel = 0
 	scrollFrame.ScrollBarThickness = 6

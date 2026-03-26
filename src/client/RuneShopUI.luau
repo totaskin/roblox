@@ -153,24 +153,31 @@ local function buildShopUI(): ScreenGui
 	screen.ResetOnSpawn = false
 	screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-	-- Main container (centered)
+	-- Main container (centered) - responsive sizing
 	local container = Instance.new("Frame")
 	container.Name = "ShopContainer"
-	container.Size = UDim2.new(0, 340, 0, 520)
-	container.Position = UDim2.new(0.5, -170, 0.5, -260)
+	container.Size = UDim2.new(0.24, 0, 0.65, 0) -- 24% width, 65% height
+	container.Position = UDim2.new(0.5, 0, 0.5, 0)
+	container.AnchorPoint = Vector2.new(0.5, 0.5) -- Center anchored
 	container.BackgroundColor3 = Color3.fromRGB(15, 15, 30)
 	container.BackgroundTransparency = 0.05
 	container.BorderSizePixel = 0
 	container.Parent = screen
 
+	-- Constrain min/max size
+	local containerSizeConstraint = Instance.new("UISizeConstraint")
+	containerSizeConstraint.MinSize = Vector2.new(300, 440)
+	containerSizeConstraint.MaxSize = Vector2.new(420, 650)
+	containerSizeConstraint.Parent = container
+
 	local containerCorner = Instance.new("UICorner")
 	containerCorner.CornerRadius = UDim.new(0, 10)
 	containerCorner.Parent = container
 
-	-- Header
+	-- Header - responsive
 	local header = Instance.new("TextLabel")
 	header.Name = "Header"
-	header.Size = UDim2.new(1, 0, 0, 40)
+	header.Size = UDim2.new(1, 0, 0.077, 0) -- ~7.7% of container height
 	header.BackgroundColor3 = Color3.fromRGB(30, 30, 60)
 	header.BackgroundTransparency = 0.2
 	header.BorderSizePixel = 0
@@ -184,11 +191,12 @@ local function buildShopUI(): ScreenGui
 	headerCorner.CornerRadius = UDim.new(0, 10)
 	headerCorner.Parent = header
 
-	-- Close button (Task 6.2)
+	-- Close button (Task 6.2) - responsive
 	local closeBtn = Instance.new("TextButton")
 	closeBtn.Name = "CloseBtn"
-	closeBtn.Size = UDim2.new(0, 32, 0, 32)
-	closeBtn.Position = UDim2.new(1, -38, 0, 4)
+	closeBtn.Size = UDim2.new(0.095, 0, 0.062, 0) -- ~9.5% width, 6.2% height
+	closeBtn.Position = UDim2.new(1, -6, 0, 4)
+	closeBtn.AnchorPoint = Vector2.new(1, 0)
 	closeBtn.BackgroundColor3 = Color3.fromRGB(160, 50, 50)
 	closeBtn.BorderSizePixel = 0
 	closeBtn.Text = "X"
@@ -198,18 +206,18 @@ local function buildShopUI(): ScreenGui
 	closeBtn.Parent = container
 
 	local closeBtnCorner = Instance.new("UICorner")
-	closeBtnCorner.CornerRadius = UDim.new(0, 6)
+	closeBtnCorner.CornerRadius = UDim.new(0.18, 0)
 	closeBtnCorner.Parent = closeBtn
 
 	closeBtn.MouseButton1Click:Connect(function()
 		RuneShopUI.hide()
 	end)
 
-	-- Notification label (Task 7.1, 7.2)
+	-- Notification label (Task 7.1, 7.2) - responsive
 	local notification = Instance.new("TextButton")
 	notification.Name = "Notification"
-	notification.Size = UDim2.new(1, -16, 0, 36)
-	notification.Position = UDim2.new(0, 8, 0, 44)
+	notification.Size = UDim2.new(1, -16, 0.07, 0) -- ~7% of container height
+	notification.Position = UDim2.new(0, 8, 0.085, 0) -- Below header
 	notification.BackgroundColor3 = Color3.fromRGB(50, 160, 80)
 	notification.BackgroundTransparency = 0.1
 	notification.BorderSizePixel = 0
@@ -222,7 +230,7 @@ local function buildShopUI(): ScreenGui
 	notification.Parent = container
 
 	local notificationCorner = Instance.new("UICorner")
-	notificationCorner.CornerRadius = UDim.new(0, 6)
+	notificationCorner.CornerRadius = UDim.new(0.15, 0)
 	notificationCorner.Parent = notification
 
 	-- Task 7.2: Dismiss notification on click
@@ -232,11 +240,11 @@ local function buildShopUI(): ScreenGui
 
 	notificationLabel = notification
 
-	-- Scrolling frame for product list (Task 6.2)
+	-- Scrolling frame for product list (Task 6.2) - responsive
 	local scrollFrame = Instance.new("ScrollingFrame")
 	scrollFrame.Name = "ProductList"
-	scrollFrame.Size = UDim2.new(1, -16, 1, -96)  -- Adjusted for notification area
-	scrollFrame.Position = UDim2.new(0, 8, 0, 88) -- Below notification area
+	scrollFrame.Size = UDim2.new(1, -16, 0.815, 0) -- ~81.5% of container height
+	scrollFrame.Position = UDim2.new(0, 8, 0.17, 0) -- Below notification area
 	scrollFrame.BackgroundTransparency = 1
 	scrollFrame.BorderSizePixel = 0
 	scrollFrame.ScrollBarThickness = 6

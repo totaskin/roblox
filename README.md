@@ -170,6 +170,10 @@ src/
 
 ## Release Notes
 
+### 0.9.6
+- Made turret shop, rune inventory bar, rune panel, and rune shop UIs responsive to screen size
+- All shop/rune UIs now scale with screen dimensions while maintaining min/max size constraints
+
 ### 0.9.5
 - Fixed turret placement costs resetting on new round (now only resets when starting a new game from lobby)
 - Improved leaderboard score submission reliability
