@@ -256,24 +256,31 @@ local function buildUI(): ScreenGui
 		end
 	end)
 
-	-- ── Loadout bar (bottom center) ──────────────────────────────────────
+	-- ── Loadout bar (bottom center) - responsive sizing ─────────────────
 	local loadoutBar = Instance.new("Frame")
 	loadoutBar.Name = "LoadoutBar"
-	loadoutBar.Size = UDim2.new(0, 340, 0, 90)
-	loadoutBar.Position = UDim2.new(0.5, -170, 1, -100)
+	loadoutBar.Size = UDim2.new(0.28, 0, 0.12, 0) -- 28% width, 12% height
+	loadoutBar.Position = UDim2.new(0.5, 0, 1, -10)
+	loadoutBar.AnchorPoint = Vector2.new(0.5, 1) -- Anchor at bottom center
 	loadoutBar.BackgroundColor3 = Color3.fromRGB(15, 15, 30)
 	loadoutBar.BackgroundTransparency = 0.15
 	loadoutBar.BorderSizePixel = 0
 	loadoutBar.Parent = screen
 
+	-- Constrain min/max size
+	local barSizeConstraint = Instance.new("UISizeConstraint")
+	barSizeConstraint.MinSize = Vector2.new(320, 80)
+	barSizeConstraint.MaxSize = Vector2.new(600, 160)
+	barSizeConstraint.Parent = loadoutBar
+
 	local barCorner = Instance.new("UICorner")
-	barCorner.CornerRadius = UDim.new(0, 10)
+	barCorner.CornerRadius = UDim.new(0.08, 0)
 	barCorner.Parent = loadoutBar
 
 	-- Title
 	local titleLabel = Instance.new("TextLabel")
 	titleLabel.Name = "Title"
-	titleLabel.Size = UDim2.new(1, 0, 0, 18)
+	titleLabel.Size = UDim2.new(1, 0, 0.2, 0) -- 20% of bar height
 	titleLabel.Position = UDim2.new(0, 0, 0, 2)
 	titleLabel.BackgroundTransparency = 1
 	titleLabel.Text = "Loadout"
@@ -285,21 +292,21 @@ local function buildUI(): ScreenGui
 	-- Slots row
 	local slotsRow = Instance.new("Frame")
 	slotsRow.Name = "SlotsRow"
-	slotsRow.Size = UDim2.new(1, -20, 0, 48)
-	slotsRow.Position = UDim2.new(0, 10, 0, 22)
+	slotsRow.Size = UDim2.new(1, -20, 0.52, 0) -- 52% of bar height
+	slotsRow.Position = UDim2.new(0, 10, 0.22, 0)
 	slotsRow.BackgroundTransparency = 1
 	slotsRow.Parent = loadoutBar
 
 	local slotsLayout = Instance.new("UIListLayout")
 	slotsLayout.FillDirection = Enum.FillDirection.Horizontal
-	slotsLayout.Padding = UDim.new(0, 8)
+	slotsLayout.Padding = UDim.new(0.02, 0)
 	slotsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	slotsLayout.Parent = slotsRow
 
 	for i = 1, 3 do
 		local slotBtn = Instance.new("TextButton")
 		slotBtn.Name = "Slot_" .. i
-		slotBtn.Size = UDim2.new(0, 100, 0, 48)
+		slotBtn.Size = UDim2.new(0.3, 0, 1, 0) -- 30% of row width, full height
 		slotBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
 		slotBtn.BorderSizePixel = 0
 		slotBtn.Text = ""
@@ -307,7 +314,7 @@ local function buildUI(): ScreenGui
 		slotBtn.Parent = slotsRow
 
 		local slotCorner = Instance.new("UICorner")
-		slotCorner.CornerRadius = UDim.new(0, 6)
+		slotCorner.CornerRadius = UDim.new(0.1, 0)
 		slotCorner.Parent = slotBtn
 
 		local slotStroke = Instance.new("UIStroke")
@@ -340,8 +347,8 @@ local function buildUI(): ScreenGui
 	-- Status label
 	statusLabel = Instance.new("TextLabel")
 	statusLabel.Name = "Status"
-	statusLabel.Size = UDim2.new(1, 0, 0, 16)
-	statusLabel.Position = UDim2.new(0, 0, 1, -18)
+	statusLabel.Size = UDim2.new(1, 0, 0.18, 0) -- 18% of bar height
+	statusLabel.Position = UDim2.new(0, 0, 0.8, 0)
 	statusLabel.BackgroundTransparency = 1
 	statusLabel.Text = "Tap a slot to add a turret"
 	statusLabel.TextColor3 = Color3.fromRGB(255, 180, 80)
@@ -349,19 +356,26 @@ local function buildUI(): ScreenGui
 	statusLabel.Font = Enum.Font.Gotham
 	statusLabel.Parent = loadoutBar
 
-	-- ── Picker overlay (appears above loadout bar when editing a slot) ───
+	-- ── Picker overlay (appears above loadout bar when editing a slot) - responsive ───
 	pickerFrame = Instance.new("Frame")
 	pickerFrame.Name = "TurretPicker"
-	pickerFrame.Size = UDim2.new(0, 360, 0, 280)
-	pickerFrame.Position = UDim2.new(0.5, -180, 1, -390)
+	pickerFrame.Size = UDim2.new(0.28, 0, 0.38, 0) -- 28% width, 38% height
+	pickerFrame.Position = UDim2.new(0.5, 0, 1, -180)
+	pickerFrame.AnchorPoint = Vector2.new(0.5, 1)
 	pickerFrame.BackgroundColor3 = Color3.fromRGB(20, 15, 40)
 	pickerFrame.BackgroundTransparency = 0.08
 	pickerFrame.BorderSizePixel = 0
 	pickerFrame.Visible = false
 	pickerFrame.Parent = screen
 
+	-- Constrain picker size
+	local pickerSizeConstraint = Instance.new("UISizeConstraint")
+	pickerSizeConstraint.MinSize = Vector2.new(320, 240)
+	pickerSizeConstraint.MaxSize = Vector2.new(500, 400)
+	pickerSizeConstraint.Parent = pickerFrame
+
 	local pickerCorner = Instance.new("UICorner")
-	pickerCorner.CornerRadius = UDim.new(0, 10)
+	pickerCorner.CornerRadius = UDim.new(0.025, 0)
 	pickerCorner.Parent = pickerFrame
 
 	local pickerStroke = Instance.new("UIStroke")

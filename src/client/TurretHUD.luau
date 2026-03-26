@@ -496,7 +496,7 @@ local function buildUI(): ScreenGui
 	-- Constrain min/max size for very small or very large screens
 	local barSizeConstraint = Instance.new("UISizeConstraint")
 	barSizeConstraint.MinSize = Vector2.new(320, 60)
-	barSizeConstraint.MaxSize = Vector2.new(600, 100)
+	barSizeConstraint.MaxSize = Vector2.new(900, 140)
 	barSizeConstraint.Parent = loadoutBar
 
 	local barCorner = Instance.new("UICorner")

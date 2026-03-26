@@ -91,7 +91,9 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 		EconomyManager.removePlayer(player.UserId)
 		ResourceManager.removePlayer(player.UserId)
 		GamepassManager.removePlayer(player.UserId)
-		RuneManager.removePlayer(player.UserId)
+		-- NOTE: Do NOT call RuneManager.removePlayer here!
+		-- Runes persist across game sessions and are saved/loaded by DataManager.
+		-- Calling removePlayer here would wipe runes before DataManager saves them.
 	end
 
 	local function getPlayerUserIds(): { number }

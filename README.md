@@ -170,6 +170,10 @@ src/
 
 ## Release Notes
 
+### 0.9.7
+- Fixed critical bug where runes could be lost when leaving the game (runes are now properly saved before cleanup)
+- Made lobby loadout selector responsive to screen size
+
 ### 0.9.6
 - Made turret shop, rune inventory bar, rune panel, and rune shop UIs responsive to screen size
 - All shop/rune UIs now scale with screen dimensions while maintaining min/max size constraints

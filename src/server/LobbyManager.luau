@@ -2187,6 +2187,7 @@ function LobbyManager.init()
 		local userId = player.UserId
 		DataManager.savePlayer(userId)
 		DataManager.removePlayer(userId)
+		RuneManager.removePlayer(userId) -- Clean up after data is saved
 	end)
 
 	-- Task 4.10: PlayerAdded — send current state to new player
