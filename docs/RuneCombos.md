@@ -49,19 +49,19 @@
 
 | Combo | Penalty |
 |-------|---------|
-| Ember + Frost | -25% damage, -10% fire rate |
-| Shadow + Radiance | -20% damage, -15% range |
-| Spore + Void | -20% fire rate, -15% damage |
-| Spark + Stone | -25% fire rate |
-| Ember + Spore | -15% damage |
-| Frost + Spark | -15% fire rate, -10% damage |
-| Shadow + Gale | -15% range |
-| Radiance + Void | -20% damage |
-| Stone + Gale | -20% fire rate, -10% range |
-| Ember + Stone | -20% fire rate |
-| Frost + Arcane | -15% damage |
-| Spark + Void | -25% fire rate, -10% damage |
-| Spore + Shadow | -20% range |
-| Radiance + Gale | -15% fire rate |
-| Arcane + Void | -30% fire rate |
-| Frost + Shadow | -15% damage, -10% range |
+| Ember + Frost | -40% damage, -30% fire rate |
+| Shadow + Radiance | -40% damage, -30% range |
+| Spore + Void | -40% fire rate, -30% damage |
+| Spark + Stone | -45% fire rate |
+| Ember + Spore | -30% damage |
+| Frost + Spark | -30% fire rate, -25% damage |
+| Shadow + Gale | -35% range |
+| Radiance + Void | -40% damage |
+| Stone + Gale | -40% fire rate, -30% range |
+| Ember + Stone | -35% fire rate |
+| Frost + Arcane | -30% damage |
+| Spark + Void | -45% fire rate, -25% damage |
+| Spore + Shadow | -40% range |
+| Radiance + Gale | -30% fire rate |
+| Arcane + Void | -50% fire rate |
+| Frost + Shadow | -30% damage, -25% range |

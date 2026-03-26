@@ -179,6 +179,10 @@ src/
 - Debug rune command (F8) now restricted to game owner only
 - Added rune combo documentation (docs/RuneCombos.md)
 
+### 0.9.8.1
+- Increased clash penalties significantly (30-50% reductions instead of 15-25%)
+- Fixed combo sound logic: clashes now always play failure sound even if mixed with synergies
+
 ### 0.9.7
 - Fixed critical bug where runes could be lost when leaving the game (runes are now properly saved before cleanup)
 - Made lobby loadout selector responsive to screen size

@@ -89,24 +89,24 @@ RuneCombinationData.PairEffects = {
 	["6_7"] = { type = "synergy", range = 1.35 },                          -- Radiance + Stone = "Beacon"
 
 	-- ═══ CLASHES (16 total - ~35% of pairs) ═══
-	-- These are "bad" combos that reduce effectiveness
+	-- These are "bad" combos that reduce effectiveness significantly
 	
-	["1_2"] = { type = "clash", damage = 0.75, fireRate = 0.9 },           -- Ember + Frost = cancel out
-	["5_6"] = { type = "clash", damage = 0.8, range = 0.85 },              -- Shadow + Radiance = oppose
-	["4_10"] = { type = "clash", fireRate = 0.8, damage = 0.85 },          -- Spore + Void = corrupt
-	["3_7"] = { type = "clash", fireRate = 0.75 },                         -- Spark + Stone = grounded
-	["1_4"] = { type = "clash", damage = 0.85 },                           -- Ember + Spore = burn spores
-	["2_3"] = { type = "clash", fireRate = 0.85, damage = 0.9 },           -- Frost + Spark = freeze circuits
-	["5_8"] = { type = "clash", range = 0.85 },                            -- Shadow + Gale = disperse
-	["6_10"] = { type = "clash", damage = 0.8 },                           -- Radiance + Void = annihilate
-	["7_8"] = { type = "clash", fireRate = 0.8, range = 0.9 },             -- Stone + Gale = heavy winds
-	["1_7"] = { type = "clash", fireRate = 0.8 },                          -- Ember + Stone = smothered
-	["2_9"] = { type = "clash", damage = 0.85 },                           -- Frost + Arcane = frozen magic
-	["3_10"] = { type = "clash", fireRate = 0.75, damage = 0.9 },          -- Spark + Void = absorbed
-	["4_5"] = { type = "clash", range = 0.8 },                             -- Spore + Shadow = wither
-	["6_8"] = { type = "clash", fireRate = 0.85 },                         -- Radiance + Gale = scattered light
-	["9_10"] = { type = "clash", fireRate = 0.7 },                         -- Arcane + Void = unstable
-	["2_5"] = { type = "clash", damage = 0.85, range = 0.9 },              -- Frost + Shadow = cold darkness
+	["1_2"] = { type = "clash", damage = 0.6, fireRate = 0.7 },            -- Ember + Frost = cancel out
+	["5_6"] = { type = "clash", damage = 0.6, range = 0.7 },               -- Shadow + Radiance = oppose
+	["4_10"] = { type = "clash", fireRate = 0.6, damage = 0.7 },           -- Spore + Void = corrupt
+	["3_7"] = { type = "clash", fireRate = 0.55 },                         -- Spark + Stone = grounded
+	["1_4"] = { type = "clash", damage = 0.7 },                            -- Ember + Spore = burn spores
+	["2_3"] = { type = "clash", fireRate = 0.7, damage = 0.75 },           -- Frost + Spark = freeze circuits
+	["5_8"] = { type = "clash", range = 0.65 },                            -- Shadow + Gale = disperse
+	["6_10"] = { type = "clash", damage = 0.6 },                           -- Radiance + Void = annihilate
+	["7_8"] = { type = "clash", fireRate = 0.6, range = 0.7 },             -- Stone + Gale = heavy winds
+	["1_7"] = { type = "clash", fireRate = 0.65 },                         -- Ember + Stone = smothered
+	["2_9"] = { type = "clash", damage = 0.7 },                            -- Frost + Arcane = frozen magic
+	["3_10"] = { type = "clash", fireRate = 0.55, damage = 0.75 },         -- Spark + Void = absorbed
+	["4_5"] = { type = "clash", range = 0.6 },                             -- Spore + Shadow = wither
+	["6_8"] = { type = "clash", fireRate = 0.7 },                          -- Radiance + Gale = scattered light
+	["9_10"] = { type = "clash", fireRate = 0.5 },                         -- Arcane + Void = unstable
+	["2_5"] = { type = "clash", damage = 0.7, range = 0.75 },              -- Frost + Shadow = cold darkness
 }
 
 -- ═══════════════════════════════════════════════════════════════════════════

@@ -464,13 +464,16 @@ local function createInstance(players: { Player }?, areaId: number?, loadouts: {
 				local turretRunes = RuneManager.getTurretRunes(turretInstanceId)
 				local turretStats = TurretManager.getTurrets()[turretInstanceId].stats
 				-- Determine combo quality: "success" (synergy), "neutral", or "failure" (clash)
+				-- Priority: failure first (any clash penalty), then success (pure synergy), else neutral
 				local RuneCombinationData = require(game.ReplicatedStorage.Shared.RuneCombinationData)
 				local combined = RuneCombinationData.computeCombinedMultipliers(turretRunes)
 				local comboQuality = "neutral"
-				if combined.legendaryCombo or (combined.damage > 1.1 or combined.range > 1.1 or combined.fireRate > 1.1) then
-					comboQuality = "success"
-				elseif combined.damage < 0.95 or combined.range < 0.95 or combined.fireRate < 0.95 then
+				local hasClash = combined.damage < 0.95 or combined.range < 0.95 or combined.fireRate < 0.95
+				local hasSynergy = combined.legendaryCombo or (combined.damage > 1.15 or combined.range > 1.15 or combined.fireRate > 1.15)
+				if hasClash then
 					comboQuality = "failure"
+				elseif hasSynergy then
+					comboQuality = "success"
 				end
 				broadcast("TurretRunesUpdate", turretInstanceId, turretRunes, turretStats, comboQuality)
 			end
